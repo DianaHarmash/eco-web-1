@@ -1,56 +1,19 @@
-const styles = `
-.category-container {
-    margin-bottom: 20px;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-.category-container h4 {
-    margin: 0 0 10px 0;
-    color: #333;
-}
-
-.chart-container {
-    position: relative;
-    width: 300px;
-    height: 150px;
-    margin: 10px 0;
-    padding: 10px;
-}
-
-.chart-tooltip {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    pointer-events: none;
-    display: none;
-    z-index: 1000;
-    white-space: nowrap;
-}
-
-.chart-line {
-    stroke: #2196F3;
-    stroke-width: 2;
-    fill: none;
-}
-
-.chart-point {
-    fill: #2196F3;
-    cursor: pointer;
-}
-`;
-
-const styleSheet = document.createElement("style");
-styleSheet.innerText = styles;
-document.head.appendChild(styleSheet);
+import { 
+    categoryComponents, 
+    categoryKeywords, 
+    categoryDisplayNames, 
+    initialFilters, 
+    initializeComponentFilters, 
+    generateFilterUI, 
+    filterFactories, 
+    filterMeasurements 
+} from './filters.js';
 
 let map;
 let markers = [];
 let factoriesData = [];
+let activeFilters = { ...initialFilters };
+let expandedCategories = {}; // Track which categories have expanded component lists
 
 async function initMap() {
     const { Map } = await google.maps.importLibrary("maps");
@@ -68,18 +31,245 @@ async function initMap() {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
         factoriesData = await response.json();
+        
+        // Initialize filters
+        activeFilters = initializeComponentFilters(activeFilters);
+        
+        // Setup UI and event listeners
+        setupFilterUI();
         setupEventListeners();
+        
+        // Initial update
         updateMarkersAndTable();
     } catch (error) {
         console.error('Error fetching data:', error);
     }
 }
 
-function setupEventListeners() {
-    const checkboxes = document.querySelectorAll('#marker-options input[type="checkbox"]');
-    checkboxes.forEach(checkbox => {
-        checkbox.addEventListener('change', updateMarkersAndTable);
+function setupFilterUI() {
+    const filtersContainer = document.getElementById('categories-filters');
+    
+    // Clear existing content
+    filtersContainer.innerHTML = '';
+    
+    // Generate new filter UI
+    const filterElement = generateFilterUI(
+        activeFilters,
+        handleCategoryToggle,
+        handleComponentToggle,
+        toggleComponentsVisibility
+    );
+    
+    filtersContainer.appendChild(filterElement);
+    
+    // Setup action buttons
+    document.getElementById('apply-filters').addEventListener('click', updateMarkersAndTable);
+    document.getElementById('reset-filters').addEventListener('click', resetFilters);
+}
+
+function handleCategoryToggle(category) {
+    const checkbox = document.getElementById(`category-${category}`);
+    activeFilters.categories[category] = checkbox.checked;
+    
+    // Update all component checkboxes for this category
+    categoryComponents[category].forEach(component => {
+        const componentCheckbox = document.getElementById(`component-${category}-${component.replace(/\s+/g, '-')}`);
+        if (componentCheckbox) {
+            componentCheckbox.disabled = !checkbox.checked;
+        }
     });
+}
+
+function handleComponentToggle(category, component) {
+    const checkbox = document.getElementById(`component-${category}-${component.replace(/\s+/g, '-')}`);
+    activeFilters.components[category][component] = checkbox.checked;
+}
+
+function toggleComponentsVisibility(category) {
+    const componentsDiv = document.getElementById(`components-${category}`);
+    const toggleBtn = componentsDiv.previousElementSibling.querySelector('.toggle-components');
+    
+    expandedCategories[category] = !expandedCategories[category];
+    
+    if (expandedCategories[category]) {
+        componentsDiv.classList.add('active');
+        toggleBtn.textContent = '-';
+    } else {
+        componentsDiv.classList.remove('active');
+        toggleBtn.textContent = '+';
+    }
+}
+
+function resetFilters() {
+    // Reset to initial values
+    activeFilters = initializeComponentFilters(initialFilters);
+    
+    // Update UI
+    setupFilterUI();
+    
+    // Apply the reset filters
+    updateMarkersAndTable();
+}
+
+function setupEventListeners() {
+    // Map events or other global listeners can be added here
+}
+
+function updateMarkersAndTable() {
+    // Clear existing markers
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
+
+    // Filter factories based on active filters
+    const filteredFactories = filterFactories(factoriesData, activeFilters);
+
+    // Create new markers for filtered factories
+    filteredFactories.forEach(factory => {
+        const marker = new google.maps.Marker({
+            position: {
+                lat: parseFloat(factory.latitude),
+                lng: parseFloat(factory.longitude)
+            },
+            map: map,
+            title: factory.factory_name
+        });
+
+        const infoWindow = new google.maps.InfoWindow({
+            content: createInfoWindowContent(factory)
+        });
+
+        marker.addListener('click', () => {
+            infoWindow.open(map, marker);
+        });
+
+        markers.push(marker);
+    });
+
+    // Update data table
+    updateDataTable(filteredFactories);
+}
+
+function createInfoWindowContent(factory) {
+    const container = document.createElement('div');
+    container.className = 'info-window';
+    
+    const title = document.createElement('h3');
+    title.textContent = factory.factory_name;
+    container.appendChild(title);
+    
+    const coords = document.createElement('p');
+    coords.textContent = `Координати: ${factory.latitude}, ${factory.longitude}`;
+    container.appendChild(coords);
+    
+    // Add a summary of available measurement categories
+    const categories = new Set();
+    factory.measurements.forEach(m => {
+        categories.add(m.category_name);
+    });
+    
+    const categoriesList = document.createElement('p');
+    categoriesList.textContent = `Наявні дані: ${Array.from(categories).join(', ')}`;
+    container.appendChild(categoriesList);
+    
+    // Add a button to scroll to the table data
+    const viewDetailsBtn = document.createElement('button');
+    viewDetailsBtn.textContent = 'Переглянути детальні дані';
+    viewDetailsBtn.style.padding = '8px 12px';
+    viewDetailsBtn.style.backgroundColor = '#4682B4';
+    viewDetailsBtn.style.color = 'white';
+    viewDetailsBtn.style.border = 'none';
+    viewDetailsBtn.style.borderRadius = '4px';
+    viewDetailsBtn.style.cursor = 'pointer';
+    viewDetailsBtn.style.marginTop = '10px';
+    
+    viewDetailsBtn.addEventListener('click', () => {
+        document.getElementById('tableContainer').scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'start' 
+        });
+    });
+    
+    container.appendChild(viewDetailsBtn);
+    
+    return container;
+}
+
+function updateDataTable(factories) {
+    const tableContainer = document.getElementById('tableContainer');
+    tableContainer.innerHTML = '';
+    
+    // If no factories match the filters, show a message
+    if (factories.length === 0) {
+        const message = document.createElement('p');
+        message.textContent = 'Немає даних, що відповідають вибраним фільтрам.';
+        tableContainer.appendChild(message);
+        return;
+    }
+    
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    
+    // Create header row
+    const headerRow = document.createElement('tr');
+    const factoryHeader = document.createElement('th');
+    factoryHeader.textContent = 'Назва фабрики';
+    headerRow.appendChild(factoryHeader);
+    
+    // Add column for each active category
+    const activeCategories = Object.keys(activeFilters.categories)
+        .filter(category => activeFilters.categories[category]);
+    
+    activeCategories.forEach(category => {
+        const th = document.createElement('th');
+        th.textContent = categoryDisplayNames[category];
+        headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create rows for each factory
+    factories.forEach(factory => {
+        const row = document.createElement('tr');
+        
+        // Factory name cell
+        const nameCell = document.createElement('td');
+        nameCell.textContent = factory.factory_name;
+        row.appendChild(nameCell);
+        
+        // Add cells for each active category
+        activeCategories.forEach(category => {
+            const cell = document.createElement('td');
+            
+            // Filter measurements for this factory and category
+            const measurements = factory.measurements.filter(m => {
+                const measurementCategory = Object.keys(categoryKeywords).find(key => 
+                    m.category_name.toLowerCase().includes(categoryKeywords[key])
+                );
+                
+                if (measurementCategory !== category) {
+                    return false;
+                }
+                
+                // Check if component is active
+                return activeFilters.components[category][m.component_name];
+            });
+            
+            if (measurements.length > 0) {
+                createChart(measurements, cell);
+            } else {
+                cell.textContent = 'Немає даних';
+            }
+            
+            row.appendChild(cell);
+        });
+        
+        tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    tableContainer.appendChild(table);
 }
 
 function createChart(measurements, container) {
@@ -121,280 +311,146 @@ function createChart(measurements, container) {
         chartContainer.className = 'chart-container';
         categoryContainer.appendChild(chartContainer);
 
-        function createComponentChart(componentMeasurements) {
-            chartContainer.innerHTML = ''; 
-        
-            const tooltip = document.createElement('div');
-            tooltip.className = 'chart-tooltip';
-            chartContainer.appendChild(tooltip);
-        
-            const width = 300;
-            const height = 150;
-            const padding = 30;
-            const bottomPadding = 50; // Increased bottom padding for date labels
-            
-            const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            svg.setAttribute('width', width);
-            svg.setAttribute('height', height + bottomPadding); // Increased height
-            
-            const values = componentMeasurements.map(m => parseFloat(m.value));
-            const minValue = Math.min(...values);
-            const maxValue = Math.max(...values);
-            
-            const xScale = (width - 2 * padding) / (componentMeasurements.length - 1);
-            const yScale = (height - 2 * padding) / (maxValue - minValue || 1);
-            
-            // X-axis
-            const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            xAxis.setAttribute('d', `M ${padding} ${height - padding} H ${width - padding}`);
-            xAxis.setAttribute('stroke', '#000');
-            
-            // Y-axis
-            const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            yAxis.setAttribute('d', `M ${padding} ${padding} V ${height - padding}`);
-            yAxis.setAttribute('stroke', '#000');
-            
-            svg.appendChild(xAxis);
-            svg.appendChild(yAxis);
-        
-            // Y-axis labels
-            const yLabels = 5;
-            for (let i = 0; i <= yLabels; i++) {
-                const value = minValue + (maxValue - minValue) * (i / yLabels);
-                const y = height - padding - (value - minValue) * yScale;
-                const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                text.setAttribute('x', padding - 5);
-                text.setAttribute('y', y);
-                text.setAttribute('text-anchor', 'end');
-                text.setAttribute('alignment-baseline', 'middle');
-                text.setAttribute('font-size', '10');
-                text.textContent = value.toFixed(1);
-                svg.appendChild(text);
-            }
-            
-            // X-axis date labels
-            const dateCount = Math.min(5, componentMeasurements.length); // Display at most 5 dates to avoid overcrowding
-            const dateInterval = Math.max(1, Math.floor(componentMeasurements.length / dateCount));
-            
-            componentMeasurements.forEach((m, i) => {
-                if (i % dateInterval === 0 || i === componentMeasurements.length - 1) {
-                    const x = padding + i * xScale;
-                    const [year, month, day] = m.measurement_date.split('-');
-                    const formattedDate = `${day}.${month}`;
-                    
-                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    text.setAttribute('x', x);
-                    text.setAttribute('y', height - padding + 20);
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('font-size', '10');
-                    text.textContent = formattedDate;
-                    
-                    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    line.setAttribute('d', `M ${x} ${height - padding} V ${height - padding + 5}`);
-                    line.setAttribute('stroke', '#000');
-                    
-                    svg.appendChild(text);
-                    svg.appendChild(line);
-                }
-            });
-            
-            let pathD = '';
-            const points = [];
-            
-            componentMeasurements.forEach((m, i) => {
-                const x = padding + i * xScale;
-                const y = height - padding - (m.value - minValue) * yScale;
-                
-                if (i === 0) {
-                    pathD += `M ${x} ${y}`;
-                } else {
-                    pathD += ` L ${x} ${y}`;
-                }
-                
-                points.push({ x, y, measurement: m });
-            });
-            
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', pathD);
-            path.setAttribute('class', 'chart-line');
-            svg.appendChild(path);
-            
-            points.forEach(point => {
-                const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-                circle.setAttribute('cx', point.x);
-                circle.setAttribute('cy', point.y);
-                circle.setAttribute('r', '5');
-                circle.setAttribute('class', 'chart-point');
-                
-                circle.addEventListener('mouseover', (e) => {
-                    const [year, month, day] = point.measurement.measurement_date.split('-');
-                    tooltip.style.display = 'block';
-                    tooltip.style.left = `${e.clientX - chartContainer.getBoundingClientRect().left + 10}px`;
-                    tooltip.style.top = `${e.clientY - chartContainer.getBoundingClientRect().top - 20}px`;
-                    tooltip.innerHTML = `
-                        Значення: ${point.measurement.value} ${point.measurement.unit}<br>
-                        Дата: ${day}.${month}.${year}
-                    `;
-                    circle.setAttribute('r', '7');
-                });
-                
-                circle.addEventListener('mouseout', () => {
-                    tooltip.style.display = 'none';
-                    circle.setAttribute('r', '5');
-                });
-                
-                svg.appendChild(circle);
-            });
-            
-            chartContainer.appendChild(svg);
-        }
-
         select.addEventListener('change', () => {
             const selectedComponent = select.value;
-            createComponentChart(measurementsByComponent[selectedComponent]);
+            createComponentChart(measurementsByComponent[selectedComponent], chartContainer);
         });
 
         if (Object.keys(measurementsByComponent).length > 0) {
             const firstComponent = Object.keys(measurementsByComponent)[0];
-            createComponentChart(measurementsByComponent[firstComponent]);
+            createComponentChart(measurementsByComponent[firstComponent], chartContainer);
         }
 
         container.appendChild(categoryContainer);
     });
 }
 
-function updateMarkersAndTable() {
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
+function createComponentChart(componentMeasurements, chartContainer) {
+    chartContainer.innerHTML = ''; 
 
-    const selectedCategories = Array.from(
-        document.querySelectorAll('#marker-options input[type="checkbox"]:checked')
-    ).map(checkbox => checkbox.value);
+    const tooltip = document.createElement('div');
+    tooltip.className = 'chart-tooltip';
+    chartContainer.appendChild(tooltip);
 
-    const filteredFactories = factoriesData.filter(factory => {
-        return factory.measurements.some(measurement => {
-            const categoryName = measurement.category_name.toLowerCase();
-            return selectedCategories.some(category => 
-                categoryName.includes(getCategoryKeyword(category))
-            );
-        });
-    });
-
-    filteredFactories.forEach(factory => {
-        const marker = new google.maps.Marker({
-            position: {
-                lat: parseFloat(factory.latitude),
-                lng: parseFloat(factory.longitude)
-            },
-            map: map,
-            title: factory.factory_name
-        });
-
-        const infoWindow = new google.maps.InfoWindow({
-            content: createInfoWindowContent(factory)
-        });
-
-        marker.addListener('click', () => {
-            infoWindow.open(map, marker);
-        });
-
-        markers.push(marker);
-    });
-
-    updateDataTable(filteredFactories, selectedCategories);
-}
-
-function getCategoryKeyword(category) {
-    const categoryMap = {
-        'air': 'повітря',
-        'water': 'водн',
-        'ground': 'ґрунт',
-        'radiation': 'радіац',
-        'economy': 'економічн',
-        'health': 'здоров',
-        'energy': 'енергетичн'
-    };
-    return categoryMap[category];
-}
-
-function createInfoWindowContent(factory) {
-    const container = document.createElement('div');
-    container.className = 'info-window';
+    const width = 300;
+    const height = 150;
+    const padding = 30;
+    const bottomPadding = 50; // Increased bottom padding for date labels
     
-    const title = document.createElement('h3');
-    title.textContent = factory.factory_name;
-    container.appendChild(title);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height + bottomPadding); // Increased height
     
-    const coords = document.createElement('p');
-    coords.textContent = `Координати: ${factory.latitude}, ${factory.longitude}`;
-    container.appendChild(coords);
+    const values = componentMeasurements.map(m => parseFloat(m.value));
+    const minValue = Math.min(...values);
+    const maxValue = Math.max(...values);
+    
+    const xScale = (width - 2 * padding) / (componentMeasurements.length - 1);
+    const yScale = (height - 2 * padding) / (maxValue - minValue || 1);
+    
+    // X-axis
+    const xAxis = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    xAxis.setAttribute('d', `M ${padding} ${height - padding} H ${width - padding}`);
+    xAxis.setAttribute('stroke', '#000');
+    
+    // Y-axis
+    const yAxis = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    yAxis.setAttribute('d', `M ${padding} ${padding} V ${height - padding}`);
+    yAxis.setAttribute('stroke', '#000');
+    
+    svg.appendChild(xAxis);
+    svg.appendChild(yAxis);
 
-    createChart(factory.measurements, container);
+    // Y-axis labels
+    const yLabels = 5;
+    for (let i = 0; i <= yLabels; i++) {
+        const value = minValue + (maxValue - minValue) * (i / yLabels);
+        const y = height - padding - (value - minValue) * yScale;
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', padding - 5);
+        text.setAttribute('y', y);
+        text.setAttribute('text-anchor', 'end');
+        text.setAttribute('alignment-baseline', 'middle');
+        text.setAttribute('font-size', '10');
+        text.textContent = value.toFixed(1);
+        svg.appendChild(text);
+    }
     
-    return container;
-}
-
-function updateDataTable(factories, selectedCategories) {
-    const tableContainer = document.getElementById('tableContainer');
-    tableContainer.innerHTML = '';
+    // X-axis date labels
+    const dateCount = Math.min(5, componentMeasurements.length); // Display at most 5 dates to avoid overcrowding
+    const dateInterval = Math.max(1, Math.floor(componentMeasurements.length / dateCount));
     
-    const table = document.createElement('table');
-    const thead = document.createElement('thead');
-    const tbody = document.createElement('tbody');
-    
-    const headerRow = document.createElement('tr');
-    const factoryHeader = document.createElement('th');
-    factoryHeader.textContent = 'Назва фабрики';
-    headerRow.appendChild(factoryHeader);
-    
-    selectedCategories.forEach(category => {
-        const th = document.createElement('th');
-        th.textContent = getCategoryDisplayName(category);
-        headerRow.appendChild(th);
-    });
-    
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-    
-    factories.forEach(factory => {
-        const row = document.createElement('tr');
-        const nameCell = document.createElement('td');
-        nameCell.textContent = factory.factory_name;
-        row.appendChild(nameCell);
-        
-        selectedCategories.forEach(category => {
-            const cell = document.createElement('td');
-            const measurements = factory.measurements.filter(m => 
-                m.category_name.toLowerCase().includes(getCategoryKeyword(category))
-            );
+    componentMeasurements.forEach((m, i) => {
+        if (i % dateInterval === 0 || i === componentMeasurements.length - 1) {
+            const x = padding + i * xScale;
+            const [year, month, day] = m.measurement_date.split('-');
+            const formattedDate = `${day}.${month}`;
             
-            if (measurements.length > 0) {
-                createChart(measurements, cell);
-            } else {
-                cell.textContent = 'Немає даних';
-            }
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', x);
+            text.setAttribute('y', height - padding + 20);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-size', '10');
+            text.textContent = formattedDate;
             
-            row.appendChild(cell);
-        });
-        
-        tbody.appendChild(row);
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            line.setAttribute('d', `M ${x} ${height - padding} V ${height - padding + 5}`);
+            line.setAttribute('stroke', '#000');
+            
+            svg.appendChild(text);
+            svg.appendChild(line);
+        }
     });
     
-    table.appendChild(tbody);
-    tableContainer.appendChild(table);
-}
-
-function getCategoryDisplayName(category) {
-    const displayNames = {
-        'air': 'Стан повітря',
-        'water': 'Стан водних ресурсів',
-        'ground': 'Стан ґрунтів',
-        'radiation': 'Рівень радіації',
-        'economy': 'Економічний стан',
-        'health': 'Стан здоров\'я населення',
-        'energy': 'Енергетичний стан'
-    };
-    return displayNames[category];
+    let pathD = '';
+    const points = [];
+    
+    componentMeasurements.forEach((m, i) => {
+        const x = padding + i * xScale;
+        const y = height - padding - (m.value - minValue) * yScale;
+        
+        if (i === 0) {
+            pathD += `M ${x} ${y}`;
+        } else {
+            pathD += ` L ${x} ${y}`;
+        }
+        
+        points.push({ x, y, measurement: m });
+    });
+    
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', pathD);
+    path.setAttribute('class', 'chart-line');
+    svg.appendChild(path);
+    
+    points.forEach(point => {
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', point.x);
+        circle.setAttribute('cy', point.y);
+        circle.setAttribute('r', '5');
+        circle.setAttribute('class', 'chart-point');
+        
+        circle.addEventListener('mouseover', (e) => {
+            const [year, month, day] = point.measurement.measurement_date.split('-');
+            tooltip.style.display = 'block';
+            tooltip.style.left = `${e.clientX - chartContainer.getBoundingClientRect().left + 10}px`;
+            tooltip.style.top = `${e.clientY - chartContainer.getBoundingClientRect().top - 20}px`;
+            tooltip.innerHTML = `
+                Значення: ${point.measurement.value} ${point.measurement.unit}<br>
+                Дата: ${day}.${month}.${year}
+            `;
+            circle.setAttribute('r', '7');
+        });
+        
+        circle.addEventListener('mouseout', () => {
+            tooltip.style.display = 'none';
+            circle.setAttribute('r', '5');
+        });
+        
+        svg.appendChild(circle);
+    });
+    
+    chartContainer.appendChild(svg);
 }
 
 (async function loadGoogleMaps() {
