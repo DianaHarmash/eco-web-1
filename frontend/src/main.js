@@ -9,6 +9,12 @@ import {
     filterMeasurements 
 } from './filters.js';
 
+import {
+    createPieChart,
+    createCategoryCharts,
+    createComponentTable
+} from './pieChart.js';
+
 let map;
 let markers = [];
 let factoriesData = [];
@@ -161,35 +167,39 @@ function createInfoWindowContent(factory) {
     coords.textContent = `Координати: ${factory.latitude}, ${factory.longitude}`;
     container.appendChild(coords);
     
-    // Add a summary of available measurement categories
-    const categories = new Set();
-    factory.measurements.forEach(m => {
-        categories.add(m.category_name);
-    });
+    // Получить доступные категории данных для фабрики
+    const availableCategories = [];
     
-    const categoriesList = document.createElement('p');
-    categoriesList.textContent = `Наявні дані: ${Array.from(categories).join(', ')}`;
-    container.appendChild(categoriesList);
-    
-    // Add a button to scroll to the table data
-    const viewDetailsBtn = document.createElement('button');
-    viewDetailsBtn.textContent = 'Переглянути детальні дані';
-    viewDetailsBtn.style.padding = '8px 12px';
-    viewDetailsBtn.style.backgroundColor = '#4682B4';
-    viewDetailsBtn.style.color = 'white';
-    viewDetailsBtn.style.border = 'none';
-    viewDetailsBtn.style.borderRadius = '4px';
-    viewDetailsBtn.style.cursor = 'pointer';
-    viewDetailsBtn.style.marginTop = '10px';
-    
-    viewDetailsBtn.addEventListener('click', () => {
-        document.getElementById('tableContainer').scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'start' 
+    if (factory.measurements && factory.measurements.length > 0) {
+        // Получаем уникальные категории из измерений
+        const categories = new Set();
+        factory.measurements.forEach(m => {
+            if (m.category_name) {
+                categories.add(m.category_name);
+            }
         });
+        
+        const categoriesList = document.createElement('p');
+        categoriesList.textContent = `Наявні дані: ${Array.from(categories).join(', ')}`;
+        container.appendChild(categoriesList);
+    }
+    
+    // Добавить кнопку для открытия диаграмм
+    const detailsButton = document.createElement('button');
+    detailsButton.textContent = 'Переглянути детальні дані';
+    detailsButton.className = 'details-button';
+    
+    detailsButton.addEventListener('click', function() {
+        console.log('Button clicked for factory:', factory.factory_name);
+        try {
+            // Непосредственное создание модального окна без импорта
+            showPieChartModal(factory);
+        } catch (error) {
+            console.error('Error opening modal:', error);
+        }
     });
     
-    container.appendChild(viewDetailsBtn);
+    container.appendChild(detailsButton);
     
     return container;
 }
@@ -270,6 +280,188 @@ function updateDataTable(factories) {
     
     table.appendChild(tbody);
     tableContainer.appendChild(table);
+}
+
+function createCategoryDropdown(factory, selectedCategory, onChange) {
+    // Create container
+    const dropdownContainer = document.createElement('div');
+    dropdownContainer.className = 'category-dropdown-container';
+    
+    // Create label
+    const label = document.createElement('label');
+    label.htmlFor = 'category-select';
+    label.textContent = 'Виберіть категорію:';
+    
+    // Create select element
+    const select = document.createElement('select');
+    select.id = 'category-select';
+    select.className = 'category-select';
+    
+    // Get available categories
+    const availableCategories = {
+        'ground': 'Стан ґрунтів',
+        'air': 'Стан повітря',
+        'water': 'Стан водних ресурсів',
+        'radiation': 'Рівень радіації',
+        'economy': 'Економічний стан',
+        'health': 'Стан здоров\'я населення',
+        'energy': 'Енергетичний стан'
+    };
+    
+    // Add options to select
+    Object.entries(availableCategories).forEach(([value, text]) => {
+        const option = document.createElement('option');
+        option.value = value;
+        option.textContent = text;
+        
+        // Select the active category
+        if (value === selectedCategory) {
+            option.selected = true;
+        }
+        
+        select.appendChild(option);
+    });
+    
+    // Add change event listener
+    select.addEventListener('change', (e) => {
+        onChange(e.target.value);
+    });
+    
+    // Assemble dropdown
+    dropdownContainer.appendChild(label);
+    dropdownContainer.appendChild(select);
+    
+    return dropdownContainer;
+}
+
+function showPieChartModal(factory) {
+    console.log('Showing modal for factory:', factory);
+    
+    // Создать или получить модальное окно
+    let modal = document.getElementById('pieChartModal');
+    
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'pieChartModal';
+        modal.className = 'modal';
+        
+        const modalContent = document.createElement('div');
+        modalContent.className = 'modal-content';
+        
+        const header = document.createElement('div');
+        header.className = 'modal-header';
+        
+        const title = document.createElement('h2');
+        title.textContent = 'Аналіз викидів';
+        title.className = 'modal-title';
+        
+        const closeBtn = document.createElement('span');
+        closeBtn.className = 'close-modal';
+        closeBtn.innerHTML = '&times;';
+        closeBtn.onclick = () => modal.style.display = 'none';
+        
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        modalContent.appendChild(header);
+        
+        const factoryName = document.createElement('h3');
+        factoryName.className = 'factory-name';
+        modalContent.appendChild(factoryName);
+        
+        modal.appendChild(modalContent);
+        document.body.appendChild(modal);
+    }
+    
+    // Получаем актуальное содержимое модального окна
+    const modalContent = modal.querySelector('.modal-content');
+    
+    // Обновить имя фабрики
+    const factoryNameElement = modal.querySelector('.factory-name');
+    factoryNameElement.textContent = factory.factory_name;
+    
+    // Удалить существующий контейнер для выбора категории (если есть)
+    const existingCategoryContainer = modal.querySelector('.category-dropdown-container');
+    if (existingCategoryContainer) {
+        existingCategoryContainer.remove();
+    }
+    
+    // Удалить существующие контейнеры диаграмм и таблицы
+    const existingChartsContainer = modal.querySelector('.charts-container');
+    if (existingChartsContainer) {
+        existingChartsContainer.remove();
+    }
+    
+    const existingTableContainer = modal.querySelector('.emissions-table-container');
+    if (existingTableContainer) {
+        existingTableContainer.remove();
+    }
+    
+    // Определение категорий
+    const categoryKeywords = {
+        'ground': 'ґрунт',
+        'air': 'повітря',
+        'water': 'водн',
+        'radiation': 'радіац',
+        'economy': 'економічн',
+        'health': 'здоров',
+        'energy': 'енергетичн'
+    };
+    
+    // Найти первую доступную категорию
+    let initialCategory = 'ground'; // По умолчанию
+    Object.entries(categoryKeywords).some(([category, keyword]) => {
+        if (factory.measurements.some(m => 
+            m.category_name && m.category_name.toLowerCase().includes(keyword)
+        )) {
+            initialCategory = category;
+            return true;
+        }
+        return false;
+    });
+    
+    // Создать UI элементы
+    const categorySelector = createCategoryDropdown(factory, initialCategory, (newCategory) => {
+        // Обновить диаграммы и таблицу при изменении категории
+        createCategoryCharts(factory, newCategory, categoryKeywords[newCategory]);
+    });
+    
+    // Создать контейнер для диаграмм
+    const chartsContainer = document.createElement('div');
+    chartsContainer.className = 'charts-container';
+    
+    const avgChartContainer = document.createElement('div');
+    avgChartContainer.id = 'avgEmissionsChart';
+    avgChartContainer.className = 'pie-chart-wrapper';
+    
+    const maxChartContainer = document.createElement('div');
+    maxChartContainer.id = 'maxEmissionsChart';
+    maxChartContainer.className = 'pie-chart-wrapper';
+    
+    chartsContainer.appendChild(avgChartContainer);
+    chartsContainer.appendChild(maxChartContainer);
+    
+    // Создать контейнер для таблицы
+    const tableContainer = document.createElement('div');
+    tableContainer.id = 'emissionsTable';
+    tableContainer.className = 'emissions-table-container';
+    
+    // Добавить все элементы в модальное окно
+    modalContent.appendChild(categorySelector);
+    modalContent.appendChild(chartsContainer);
+    modalContent.appendChild(tableContainer);
+    
+    // Первоначальное отображение
+    createCategoryCharts(factory, initialCategory, categoryKeywords[initialCategory]);
+    
+    // Показать модальное окно
+    modal.style.display = 'block';
+    
+    // Обработчик закрытия модального окна по клику вне его
+    window.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            modal.style.display = 'none';
+        }
+    });
 }
 
 function createChart(measurements, container) {
