@@ -1,8 +1,7 @@
-// integralIndicators.js - функции для расчета интегральных показателей по всем подсистемам
-
 // Импортируем функции для расчета показателей
 import { calculateAirQualityIndex } from './airQualityIndex.js';
 import { calculateWaterQualityIndex } from './waterQualityIndex.js';
+import { calculateSoilQualityIndex } from './soilQualityIndex.js';
 
 /**
  * Рассчитывает все доступные интегральные показатели для объекта
@@ -38,9 +37,17 @@ export function calculateAllIndicators(factory) {
         console.error('Ошибка при расчете показателя качества воды:', error);
         indicators.waterQuality = createDummyIndicator('Якість води', 'Помилка розрахунку');
     }
+
+    try {
+        // Расчет показателя качества почвы
+        indicators.soilQuality = calculateSoilQualityIndex(factory.measurements);
+        console.log('Показатель качества почвы рассчитан:', indicators.soilQuality);
+    } catch (error) {
+        console.error('Ошибка при расчете показателя качества почвы:', error);
+        indicators.soilQuality = createDummyIndicator('Стан ґрунтів', 'Помилка розрахунку');
+    }
     
     // Заглушки для остальных показателей
-    indicators.soilQuality = createDummyIndicator('Стан ґрунтів', 'Немає даних про стан ґрунтів');
     indicators.radiationLevel = createDummyIndicator('Рівень радіації', 'Немає даних про рівень радіації');
     indicators.economyStatus = createDummyIndicator('Економічний стан', 'Немає економічних даних');
     indicators.healthStatus = createDummyIndicator('Стан здоров\'я', 'Немає даних про стан здоров\'я');
@@ -190,7 +197,7 @@ export function createIndicatorsDisplay(indicators) {
         indicatorText.className = 'indicator-text';
         indicatorText.textContent = indicator.text || 'Немає опису';
         
-        // Добавляем дополнительную информацию для качества воды
+        // Добавляем дополнительную информацию для различных показателей
         if (key === 'waterQuality' && indicator.value !== null) {
             // Дополнительная информация о качестве воды
             if (indicator.value === 0) {
@@ -209,6 +216,43 @@ export function createIndicatorsDisplay(indicators) {
                 detailSpan.style.color = '#666';
                 detailSpan.textContent = `Найвищий показник: ${indicator.worstContaminant}`;
                 indicatorText.appendChild(detailSpan);
+            }
+        } else if (key === 'soilQuality' && indicator.value !== null) {
+            // Дополнительная информация о состоянии почв
+            if (indicator.class >= 4) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(потребує покращення)</span>`;
+            } else if (indicator.class === 3) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FFEB3B;font-style:italic;">(прийнятна якість)</span>`;
+            }
+            
+            // Если есть информация о показателях
+            if (indicator.indicators && indicator.indicators.length > 0) {
+                const detailSpan = document.createElement('div');
+                detailSpan.style.fontSize = '0.9em';
+                detailSpan.style.marginTop = '3px';
+                detailSpan.style.color = '#666';
+                
+                // Группируем показатели по качеству
+                const goodIndicators = indicator.indicators.filter(i => i.normalizedValue >= 0.7);
+                const mediumIndicators = indicator.indicators.filter(i => i.normalizedValue >= 0.4 && i.normalizedValue < 0.7);
+                const badIndicators = indicator.indicators.filter(i => i.normalizedValue < 0.4);
+                
+                if (badIndicators.length > 0) {
+                    const badNames = badIndicators.map(i => i.displayName.split(' ')[0]).join(', ');
+                    detailSpan.textContent = `Проблемні показники: ${badNames}`;
+                } else if (indicator.indicators.length >= 3) {
+                    detailSpan.textContent = `Оцінено ${indicator.indicators.length} показників ґрунту`;
+                }
+                
+                indicatorText.appendChild(detailSpan);
+            }
+        } else if (key === 'airQuality' && indicator.value !== null) {
+            // Дополнительная информация о качестве воздуха
+            const airValue = parseFloat(indicator.value);
+            if (airValue >= 1.5) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(значне перевищення норми)</span>`;
+            } else if (airValue >= 1.0) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FFA726;font-style:italic;">(перевищення норми)</span>`;
             }
         }
         
