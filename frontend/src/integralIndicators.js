@@ -5,6 +5,7 @@ import { calculateSoilQualityIndex } from './soilQualityIndex.js';
 import { calculateRadiationLevelIndex } from './radiationLevelIndex.js';
 import { calculateEconomyStatusIndex } from './economyStatusIndex.js';
 import { calculateHealthStatusIndex } from './healthStatusIndex.js';
+import { calculateEnergyStatusIndex } from './energyStatusIndex.js';
 
 const HEALTH_INDICATORS = {
     'медико-демографічні показники': {
@@ -101,8 +102,14 @@ export function calculateAllIndicators(factory) {
         indicators.healthStatus = createDummyIndicator('Стан здоров\'я', 'Помилка розрахунку');
     }
     
-    // Заглушки для остальных показателей
-    indicators.energyStatus = createDummyIndicator('Енергетичний стан', 'Немає даних про енергетичний стан');
+    try {
+        // Расчет показателя энергетического состояния
+        indicators.energyStatus = calculateEnergyStatusIndex(factory.measurements);
+        console.log('Показатель энергетического состояния рассчитан:', indicators.energyStatus);
+    } catch (error) {
+        console.error('Ошибка при расчете показателя энергетического состояния:', error);
+        indicators.energyStatus = createDummyIndicator('Енергетичний стан', 'Помилка розрахунку');
+    }
     
     return indicators;
 }
@@ -400,6 +407,40 @@ export function createIndicatorsDisplay(indicators) {
                 } else if (categoryCount > 0) {
                     // Показываем количество оцененных категорий
                     detailSpan.textContent = `Оцінено ${categoryCount} ${categoryCount === 1 ? 'категорію' : 'категорії'} показників здоров'я`;
+                }
+                
+                indicatorText.appendChild(detailSpan);
+            }
+        } else if (key === 'energyStatus' && indicator.value !== null) {
+            // Дополнительная информация об энергетическом состоянии
+            if (indicator.class >= 4) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(енергонеефективно)</span>`;
+            } else if (indicator.class <= 2) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#66BB6A;font-style:italic;">(енергоефективно)</span>`;
+            }
+            
+            // Добавляем детали по ресурсам
+            if (indicator.indicators && indicator.indicators.length > 0) {
+                const detailSpan = document.createElement('div');
+                detailSpan.style.fontSize = '0.9em';
+                detailSpan.style.marginTop = '3px';
+                detailSpan.style.color = '#666';
+                
+                const resourceTypes = new Set(indicator.indicators.map(i => i.resourceType));
+                
+                // Если есть наименее эффективный ресурс
+                if (indicator.leastEfficientResource && indicator.leastEfficientResource.efficiency < 0.4) {
+                    const resourceName = {
+                        'water': 'водоспоживання',
+                        'electricity': 'електроспоживання',
+                        'gas': 'газоспоживання',
+                        'heat': 'теплоспоживання'
+                    }[indicator.leastEfficientResource.resourceType] || 'енергоспоживання';
+                    
+                    detailSpan.textContent = `Найменш ефективне: ${resourceName}`;
+                } else if (resourceTypes.size > 0) {
+                    // Показываем количество оцененных ресурсов
+                    detailSpan.textContent = `Оцінено ${resourceTypes.size} ${resourceTypes.size === 1 ? 'вид' : 'види'} енергоресурсів`;
                 }
                 
                 indicatorText.appendChild(detailSpan);
