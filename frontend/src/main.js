@@ -15,6 +15,11 @@ import {
     createComponentTable
 } from './pieChart.js';
 
+import {
+    calculateAllIndicators,
+    createIndicatorsDisplay
+} from './integralIndicators.js';
+
 let map;
 let markers = [];
 let factoriesData = [];
@@ -167,10 +172,15 @@ function createInfoWindowContent(factory) {
     coords.textContent = `Координати: ${factory.latitude}, ${factory.longitude}`;
     container.appendChild(coords);
     
-    // Получить доступные категории данных для фабрики
-    const availableCategories = [];
-    
+    // Расчет и отображение всех интегральных показателей
     if (factory.measurements && factory.measurements.length > 0) {
+        // Расчет всех доступных показателей
+        const indicators = calculateAllIndicators(factory);
+        
+        // Создание и добавление элемента отображения показателей
+        const indicatorsDisplay = createIndicatorsDisplay(indicators);
+        container.appendChild(indicatorsDisplay);
+        
         // Получаем уникальные категории из измерений
         const categories = new Set();
         factory.measurements.forEach(m => {
@@ -192,7 +202,6 @@ function createInfoWindowContent(factory) {
     detailsButton.addEventListener('click', function() {
         console.log('Button clicked for factory:', factory.factory_name);
         try {
-            // Непосредственное создание модального окна без импорта
             showPieChartModal(factory);
         } catch (error) {
             console.error('Error opening modal:', error);
@@ -373,7 +382,19 @@ function showPieChartModal(factory) {
     }
     
     // Получаем актуальное содержимое модального окна
-    const modalContent = modal.querySelector('.modal-content');
+    const modalContent = modal.querySelector('.modal-content'); 
+
+    const airQualityContainer = modal.querySelector('#airQualityContainer');
+    if (airQualityContainer) {
+        airQualityContainer.innerHTML = '';
+
+        // Расчет всех доступных показателей
+        const indicators = calculateAllIndicators(factory);
+        
+        // Создание и добавление элемента отображения показателей
+        const indicatorsDisplay = createIndicatorsDisplay(indicators);
+        airQualityContainer.appendChild(indicatorsDisplay);
+    }
     
     // Обновить имя фабрики
     const factoryNameElement = modal.querySelector('.factory-name');
