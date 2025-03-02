@@ -2,6 +2,7 @@
 import { calculateAirQualityIndex } from './airQualityIndex.js';
 import { calculateWaterQualityIndex } from './waterQualityIndex.js';
 import { calculateSoilQualityIndex } from './soilQualityIndex.js';
+import { calculateRadiationLevelIndex } from './radiationLevelIndex.js';
 
 /**
  * Рассчитывает все доступные интегральные показатели для объекта
@@ -37,18 +38,26 @@ export function calculateAllIndicators(factory) {
         console.error('Ошибка при расчете показателя качества воды:', error);
         indicators.waterQuality = createDummyIndicator('Якість води', 'Помилка розрахунку');
     }
-
+    
     try {
-        // Расчет показателя качества почвы
+        // Расчет показателя загрязнения почв
         indicators.soilQuality = calculateSoilQualityIndex(factory.measurements);
-        console.log('Показатель качества почвы рассчитан:', indicators.soilQuality);
+        console.log('Показатель качества почв рассчитан:', indicators.soilQuality);
     } catch (error) {
-        console.error('Ошибка при расчете показателя качества почвы:', error);
+        console.error('Ошибка при расчете показателя качества почв:', error);
         indicators.soilQuality = createDummyIndicator('Стан ґрунтів', 'Помилка розрахунку');
     }
     
+    try {
+        // Расчет показателя радиационного состояния
+        indicators.radiationLevel = calculateRadiationLevelIndex(factory.measurements);
+        console.log('Показатель радиационного состояния рассчитан:', indicators.radiationLevel);
+    } catch (error) {
+        console.error('Ошибка при расчете показателя радиационного состояния:', error);
+        indicators.radiationLevel = createDummyIndicator('Рівень радіації', 'Помилка розрахунку');
+    }
+    
     // Заглушки для остальных показателей
-    indicators.radiationLevel = createDummyIndicator('Рівень радіації', 'Немає даних про рівень радіації');
     indicators.economyStatus = createDummyIndicator('Економічний стан', 'Немає економічних даних');
     indicators.healthStatus = createDummyIndicator('Стан здоров\'я', 'Немає даних про стан здоров\'я');
     indicators.energyStatus = createDummyIndicator('Енергетичний стан', 'Немає даних про енергетичний стан');
@@ -253,6 +262,37 @@ export function createIndicatorsDisplay(indicators) {
                 indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(значне перевищення норми)</span>`;
             } else if (airValue >= 1.0) {
                 indicatorText.innerHTML = `${indicator.text} <span style="color:#FFA726;font-style:italic;">(перевищення норми)</span>`;
+            } 
+        }  else if (key === 'radiationLevel' && indicator.value !== null) {
+            // Дополнительная информация о радиационном состоянии
+            const radiationValue = parseFloat(indicator.value);
+            
+            if (indicator.class >= 3) {
+                // Для повышенного и опасного уровня
+                indicatorText.innerHTML = `${indicator.text} <span style="color:${indicator.color};font-weight:bold;">(потребує контролю)</span>`;
+                
+                if (indicator.risk && indicator.risk.category !== 'NEGLIGIBLE' && indicator.risk.category !== 'SMALL') {
+                    const detailSpan = document.createElement('div');
+                    detailSpan.style.fontSize = '0.9em';
+                    detailSpan.style.marginTop = '3px';
+                    detailSpan.style.color = '#666';
+                    detailSpan.textContent = `Категорія ризику: ${indicator.risk.description}`;
+                    indicatorText.appendChild(detailSpan);
+                }
+            } else {
+                // Для нормального уровня
+                if (radiationValue <= 0.2) {
+                    indicatorText.innerHTML = `${indicator.text} <span style="color:#26A69A;font-style:italic;">(природний фон)</span>`;
+                }
+            }
+             // Если есть информация о компоненте
+             if (indicator.component) {
+                const detailSpan = document.createElement('div');
+                detailSpan.style.fontSize = '0.9em';
+                detailSpan.style.marginTop = '3px';
+                detailSpan.style.color = '#666';
+                detailSpan.textContent = `Вимірювання: ${indicator.component}`;
+                indicatorText.appendChild(detailSpan);
             }
         }
         
