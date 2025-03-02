@@ -3,6 +3,7 @@ import { calculateAirQualityIndex } from './airQualityIndex.js';
 import { calculateWaterQualityIndex } from './waterQualityIndex.js';
 import { calculateSoilQualityIndex } from './soilQualityIndex.js';
 import { calculateRadiationLevelIndex } from './radiationLevelIndex.js';
+import { calculateEconomyStatusIndex } from './economyStatusIndex.js';
 
 /**
  * Рассчитывает все доступные интегральные показатели для объекта
@@ -57,8 +58,16 @@ export function calculateAllIndicators(factory) {
         indicators.radiationLevel = createDummyIndicator('Рівень радіації', 'Помилка розрахунку');
     }
     
+    try {
+        // Расчет показателя экономического состояния
+        indicators.economyStatus = calculateEconomyStatusIndex(factory.measurements);
+        console.log('Показатель экономического состояния рассчитан:', indicators.economyStatus);
+    } catch (error) {
+        console.error('Ошибка при расчете показателя экономического состояния:', error);
+        indicators.economyStatus = createDummyIndicator('Економічний стан', 'Помилка розрахунку');
+    }
+    
     // Заглушки для остальных показателей
-    indicators.economyStatus = createDummyIndicator('Економічний стан', 'Немає економічних даних');
     indicators.healthStatus = createDummyIndicator('Стан здоров\'я', 'Немає даних про стан здоров\'я');
     indicators.energyStatus = createDummyIndicator('Енергетичний стан', 'Немає даних про енергетичний стан');
     
@@ -293,6 +302,42 @@ export function createIndicatorsDisplay(indicators) {
                 detailSpan.style.color = '#666';
                 detailSpan.textContent = `Вимірювання: ${indicator.component}`;
                 indicatorText.appendChild(detailSpan);
+            }
+        } else if (key === 'economyStatus' && indicator.value !== null) {
+            // Дополнительная информация об экономическом состоянии
+            if (indicator.class >= 4) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(потребує покращення)</span>`;
+            } else if (indicator.class <= 2) {
+                indicatorText.innerHTML = `${indicator.text} <span style="color:#66BB6A;font-style:italic;">(позитивна динаміка)</span>`;
+            }
+            
+            // Добавляем детали по лучшим и худшим индикаторам
+            if (indicator.indicators && indicator.indicators.length > 0) {
+                const detailSpan = document.createElement('div');
+                detailSpan.style.fontSize = '0.9em';
+                detailSpan.style.marginTop = '3px';
+                detailSpan.style.color = '#666';
+                
+                const details = [];
+                
+                // Если есть проблемный индикатор
+                if (indicator.worstIndicator && indicator.worstIndicator.score < 0.3) {
+                    details.push(`Проблемний: ${indicator.worstIndicator.shortName} (${indicator.worstIndicator.value} ${indicator.worstIndicator.unit})`);
+                }
+                
+                // Если есть сильный индикатор
+                if (indicator.bestIndicator && indicator.bestIndicator.score > 0.7) {
+                    details.push(`Сильний: ${indicator.bestIndicator.shortName} (${indicator.bestIndicator.value} ${indicator.bestIndicator.unit})`);
+                }
+                
+                if (details.length > 0) {
+                    detailSpan.textContent = details.join(', ');
+                    indicatorText.appendChild(detailSpan);
+                } else {
+                    // Если нет выделенных индикаторов, показываем общее количество
+                    detailSpan.textContent = `Оцінено ${indicator.indicators.length} економічних показників`;
+                    indicatorText.appendChild(detailSpan);
+                }
             }
         }
         
