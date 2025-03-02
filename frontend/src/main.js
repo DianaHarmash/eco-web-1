@@ -126,43 +126,12 @@ function setupEventListeners() {
     // Map events or other global listeners can be added here
 }
 
-function updateMarkersAndTable() {
-    // Clear existing markers
-    markers.forEach(marker => marker.setMap(null));
-    markers = [];
-
-    // Filter factories based on active filters
-    const filteredFactories = filterFactories(factoriesData, activeFilters);
-
-    // Create new markers for filtered factories
-    filteredFactories.forEach(factory => {
-        const marker = new google.maps.Marker({
-            position: {
-                lat: parseFloat(factory.latitude),
-                lng: parseFloat(factory.longitude)
-            },
-            map: map,
-            title: factory.factory_name
-        });
-
-        const infoWindow = new google.maps.InfoWindow({
-            content: createInfoWindowContent(factory)
-        });
-
-        marker.addListener('click', () => {
-            infoWindow.open(map, marker);
-        });
-
-        markers.push(marker);
-    });
-
-    // Update data table
-    updateDataTable(filteredFactories);
-}
-
 function createInfoWindowContent(factory) {
+    console.log('Создание информационного окна для:', factory.factory_name);
+    
     const container = document.createElement('div');
     container.className = 'info-window';
+    container.style.maxWidth = '300px'; // Ограничиваем ширину для улучшения читаемости
     
     const title = document.createElement('h3');
     title.textContent = factory.factory_name;
@@ -174,24 +143,42 @@ function createInfoWindowContent(factory) {
     
     // Расчет и отображение всех интегральных показателей
     if (factory.measurements && factory.measurements.length > 0) {
-        // Расчет всех доступных показателей
-        const indicators = calculateAllIndicators(factory);
-        
-        // Создание и добавление элемента отображения показателей
-        const indicatorsDisplay = createIndicatorsDisplay(indicators);
-        container.appendChild(indicatorsDisplay);
-        
-        // Получаем уникальные категории из измерений
-        const categories = new Set();
-        factory.measurements.forEach(m => {
-            if (m.category_name) {
-                categories.add(m.category_name);
+        try {
+            // Расчет всех доступных показателей
+            const indicators = calculateAllIndicators(factory);
+            
+            if (indicators && Object.keys(indicators).length > 0) {
+                // Создание и добавление элемента отображения показателей
+                const indicatorsDisplay = createIndicatorsDisplay(indicators);
+                container.appendChild(indicatorsDisplay);
             }
-        });
-        
-        const categoriesList = document.createElement('p');
-        categoriesList.textContent = `Наявні дані: ${Array.from(categories).join(', ')}`;
-        container.appendChild(categoriesList);
+            
+            // Получаем уникальные категории из измерений
+            const categories = new Set();
+            factory.measurements.forEach(m => {
+                if (m.category_name) {
+                    categories.add(m.category_name);
+                }
+            });
+            
+            if (categories.size > 0) {
+                const categoriesList = document.createElement('p');
+                categoriesList.textContent = `Наявні дані: ${Array.from(categories).join(', ')}`;
+                container.appendChild(categoriesList);
+            }
+        } catch (error) {
+            console.error('Ошибка при создании индикаторов:', error);
+            const errorMessage = document.createElement('p');
+            errorMessage.textContent = 'Помилка при обробці даних';
+            errorMessage.style.color = '#FF5252';
+            container.appendChild(errorMessage);
+        }
+    } else {
+        const noDataMessage = document.createElement('p');
+        noDataMessage.textContent = 'Немає даних для відображення';
+        noDataMessage.style.fontStyle = 'italic';
+        noDataMessage.style.color = '#666';
+        container.appendChild(noDataMessage);
     }
     
     // Добавить кнопку для открытия диаграмм
@@ -205,90 +192,13 @@ function createInfoWindowContent(factory) {
             showPieChartModal(factory);
         } catch (error) {
             console.error('Error opening modal:', error);
+            alert('Помилка при відкритті деталей. Будь ласка, спробуйте пізніше.');
         }
     });
     
     container.appendChild(detailsButton);
     
     return container;
-}
-
-function updateDataTable(factories) {
-    const tableContainer = document.getElementById('tableContainer');
-    tableContainer.innerHTML = '';
-    
-    // If no factories match the filters, show a message
-    if (factories.length === 0) {
-        const message = document.createElement('p');
-        message.textContent = 'Немає даних, що відповідають вибраним фільтрам.';
-        tableContainer.appendChild(message);
-        return;
-    }
-    
-    const table = document.createElement('table');
-    const thead = document.createElement('thead');
-    const tbody = document.createElement('tbody');
-    
-    // Create header row
-    const headerRow = document.createElement('tr');
-    const factoryHeader = document.createElement('th');
-    factoryHeader.textContent = 'Назва фабрики';
-    headerRow.appendChild(factoryHeader);
-    
-    // Add column for each active category
-    const activeCategories = Object.keys(activeFilters.categories)
-        .filter(category => activeFilters.categories[category]);
-    
-    activeCategories.forEach(category => {
-        const th = document.createElement('th');
-        th.textContent = categoryDisplayNames[category];
-        headerRow.appendChild(th);
-    });
-    
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-    
-    // Create rows for each factory
-    factories.forEach(factory => {
-        const row = document.createElement('tr');
-        
-        // Factory name cell
-        const nameCell = document.createElement('td');
-        nameCell.textContent = factory.factory_name;
-        row.appendChild(nameCell);
-        
-        // Add cells for each active category
-        activeCategories.forEach(category => {
-            const cell = document.createElement('td');
-            
-            // Filter measurements for this factory and category
-            const measurements = factory.measurements.filter(m => {
-                const measurementCategory = Object.keys(categoryKeywords).find(key => 
-                    m.category_name.toLowerCase().includes(categoryKeywords[key])
-                );
-                
-                if (measurementCategory !== category) {
-                    return false;
-                }
-                
-                // Check if component is active
-                return activeFilters.components[category][m.component_name];
-            });
-            
-            if (measurements.length > 0) {
-                createChart(measurements, cell);
-            } else {
-                cell.textContent = 'Немає даних';
-            }
-            
-            row.appendChild(cell);
-        });
-        
-        tbody.appendChild(row);
-    });
-    
-    table.appendChild(tbody);
-    tableContainer.appendChild(table);
 }
 
 function createCategoryDropdown(factory, selectedCategory, onChange) {
@@ -361,7 +271,7 @@ function showPieChartModal(factory) {
         header.className = 'modal-header';
         
         const title = document.createElement('h2');
-        title.textContent = 'Аналіз викидів';
+        title.textContent = 'Аналіз екологічних показників';
         title.className = 'modal-title';
         
         const closeBtn = document.createElement('span');
@@ -377,28 +287,52 @@ function showPieChartModal(factory) {
         factoryName.className = 'factory-name';
         modalContent.appendChild(factoryName);
         
+        // Добавляем контейнер для индикаторов
+        const indicatorsContainer = document.createElement('div');
+        indicatorsContainer.id = 'airQualityContainer';
+        indicatorsContainer.className = 'indicators-container';
+        indicatorsContainer.style.marginBottom = '20px';
+        modalContent.appendChild(indicatorsContainer);
+        
         modal.appendChild(modalContent);
         document.body.appendChild(modal);
     }
     
     // Получаем актуальное содержимое модального окна
-    const modalContent = modal.querySelector('.modal-content'); 
-
-    const airQualityContainer = modal.querySelector('#airQualityContainer');
-    if (airQualityContainer) {
-        airQualityContainer.innerHTML = '';
-
-        // Расчет всех доступных показателей
-        const indicators = calculateAllIndicators(factory);
-        
-        // Создание и добавление элемента отображения показателей
-        const indicatorsDisplay = createIndicatorsDisplay(indicators);
-        airQualityContainer.appendChild(indicatorsDisplay);
-    }
+    const modalContent = modal.querySelector('.modal-content');
     
     // Обновить имя фабрики
     const factoryNameElement = modal.querySelector('.factory-name');
     factoryNameElement.textContent = factory.factory_name;
+    
+    // Обновляем контейнер интегральных показателей
+    const indicatorsContainer = modal.querySelector('#airQualityContainer');
+    if (indicatorsContainer) {
+        try {
+            indicatorsContainer.innerHTML = '';
+            
+            // Расчет всех доступных показателей
+            const indicators = calculateAllIndicators(factory);
+            
+            if (indicators && Object.keys(indicators).length > 0) {
+                // Создание и добавление элемента отображения показателей
+                const indicatorsDisplay = createIndicatorsDisplay(indicators);
+                indicatorsContainer.appendChild(indicatorsDisplay);
+            } else {
+                const noDataMessage = document.createElement('p');
+                noDataMessage.textContent = 'Немає даних для відображення';
+                noDataMessage.style.fontStyle = 'italic';
+                noDataMessage.style.color = '#666';
+                indicatorsContainer.appendChild(noDataMessage);
+            }
+        } catch (error) {
+            console.error('Ошибка при отображении индикаторов в модальном окне:', error);
+            const errorMessage = document.createElement('p');
+            errorMessage.textContent = 'Помилка при обробці даних';
+            errorMessage.style.color = '#FF5252';
+            indicatorsContainer.appendChild(errorMessage);
+        }
+    }
     
     // Удалить существующий контейнер для выбора категории (если есть)
     const existingCategoryContainer = modal.querySelector('.category-dropdown-container');
@@ -429,7 +363,7 @@ function showPieChartModal(factory) {
     };
     
     // Найти первую доступную категорию
-    let initialCategory = 'ground'; // По умолчанию
+    let initialCategory = null;
     Object.entries(categoryKeywords).some(([category, keyword]) => {
         if (factory.measurements.some(m => 
             m.category_name && m.category_name.toLowerCase().includes(keyword)
@@ -439,6 +373,13 @@ function showPieChartModal(factory) {
         }
         return false;
     });
+    
+    if (!initialCategory) {
+        // Если не нашли категорию, выходим
+        // Показать модальное окно
+        modal.style.display = 'block';
+        return;
+    }
     
     // Создать UI элементы
     const categorySelector = createCategoryDropdown(factory, initialCategory, (newCategory) => {
@@ -536,6 +477,130 @@ function createChart(measurements, container) {
 
         container.appendChild(categoryContainer);
     });
+}
+
+/**
+ * Обновляет таблицу данных на основе отфильтрованных фабрик
+ * @param {Array} factories - Массив отфильтрованных фабрик
+ */
+function updateDataTable(factories) {
+    const tableContainer = document.getElementById('tableContainer');
+    tableContainer.innerHTML = '';
+    
+    // Если нет фабрик, соответствующих фильтрам, показываем сообщение
+    if (factories.length === 0) {
+        const message = document.createElement('p');
+        message.textContent = 'Немає даних, що відповідають вибраним фільтрам.';
+        tableContainer.appendChild(message);
+        return;
+    }
+    
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+    
+    // Создаем строку заголовка
+    const headerRow = document.createElement('tr');
+    const factoryHeader = document.createElement('th');
+    factoryHeader.textContent = 'Назва фабрики';
+    headerRow.appendChild(factoryHeader);
+    
+    // Добавляем колонку для каждой активной категории
+    const activeCategories = Object.keys(activeFilters.categories)
+        .filter(category => activeFilters.categories[category]);
+    
+    activeCategories.forEach(category => {
+        const th = document.createElement('th');
+        th.textContent = categoryDisplayNames[category];
+        headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Создаем строки для каждой фабрики
+    factories.forEach(factory => {
+        const row = document.createElement('tr');
+        
+        // Ячейка с названием фабрики
+        const nameCell = document.createElement('td');
+        nameCell.textContent = factory.factory_name;
+        row.appendChild(nameCell);
+        
+        // Добавляем ячейки для каждой активной категории
+        activeCategories.forEach(category => {
+            const cell = document.createElement('td');
+            
+            // Фильтруем измерения для этой фабрики и категории
+            const measurements = factory.measurements.filter(m => {
+                if (!m.category_name) return false;
+                
+                const measurementCategory = Object.keys(categoryKeywords).find(key => 
+                    m.category_name.toLowerCase().includes(categoryKeywords[key])
+                );
+                
+                if (measurementCategory !== category) {
+                    return false;
+                }
+                
+                // Проверяем, активен ли компонент
+                return activeFilters.components[category] && 
+                       activeFilters.components[category][m.component_name];
+            });
+            
+            if (measurements && measurements.length > 0) {
+                try {
+                    createChart(measurements, cell);
+                } catch (error) {
+                    console.error('Ошибка при создании графика:', error);
+                    cell.textContent = 'Помилка візуалізації даних';
+                }
+            } else {
+                cell.textContent = 'Немає даних';
+            }
+            
+            row.appendChild(cell);
+        });
+        
+        tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    tableContainer.appendChild(table);
+}
+
+function updateMarkersAndTable() {
+    // Clear existing markers
+    markers.forEach(marker => marker.setMap(null));
+    markers = [];
+
+    // Filter factories based on active filters
+    const filteredFactories = filterFactories(factoriesData, activeFilters);
+
+    // Create new markers for filtered factories
+    filteredFactories.forEach(factory => {
+        const marker = new google.maps.Marker({
+            position: {
+                lat: parseFloat(factory.latitude),
+                lng: parseFloat(factory.longitude)
+            },
+            map: map,
+            title: factory.factory_name
+        });
+
+        const infoWindow = new google.maps.InfoWindow({
+            content: createInfoWindowContent(factory)
+        });
+
+        marker.addListener('click', () => {
+            infoWindow.open(map, marker);
+        });
+
+        markers.push(marker);
+    });
+
+    // Update data table
+    updateDataTable(filteredFactories);
 }
 
 function createComponentChart(componentMeasurements, chartContainer) {
