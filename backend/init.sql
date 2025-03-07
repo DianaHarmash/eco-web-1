@@ -1627,3 +1627,9 @@ VALUES
     (52, 10, '2025-01-07', 880.0, 'кВт·год/міс'),
     (53, 10, '2025-01-07', 1.02, 'коефіцієнт');
 
+-- Добавляем поле region в таблицу eco_factory (если его нет)
+ALTER TABLE eco_factory ADD COLUMN region VARCHAR(50);
+
+-- Обновляем данные с регионами
+UPDATE eco_factory SET region = 'Київська область'; 
+
