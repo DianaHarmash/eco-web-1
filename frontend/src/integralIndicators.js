@@ -1,466 +1,777 @@
-// Импортируем функции для расчета показателей
-import { calculateAirQualityIndex } from './airQualityIndex.js';
-import { calculateWaterQualityIndex } from './waterQualityIndex.js';
-import { calculateSoilQualityIndex } from './soilQualityIndex.js';
-import { calculateRadiationLevelIndex } from './radiationLevelIndex.js';
-import { calculateEconomyStatusIndex } from './economyStatusIndex.js';
-import { calculateHealthStatusIndex } from './healthStatusIndex.js';
-import { calculateEnergyStatusIndex } from './energyStatusIndex.js';
-
-const HEALTH_INDICATORS = {
-    'медико-демографічні показники': {
-        shortName: 'Медико-демографічні'
-    },
-    'показники захворюваності та поширення хвороб': {
-        shortName: 'Захворюваність'
-    },
-    'інвалідності та інвалідизації': {
-        shortName: 'Інвалідність'
-    },
-    'фізичного розвитку населення': {
-        shortName: 'Фізичний розвиток'
-    },
-    'ризики захворювання': {
-        shortName: 'Ризики захворювань'
-    },
-    'прогноз захворювання': {
-        shortName: 'Прогноз захворювань'
-    },
-    'прогноз тривалості життя': {
-        shortName: 'Тривалість життя'
-    }
-};
+// integralIndicators.js
+// Calculations for environmental quality indicators according to the NP_KMEEEP document
 
 /**
- * Рассчитывает все доступные интегральные показатели для объекта
- * @param {Object} factory - Данные о фабрике с измерениями
- * @returns {Object} - Объект с рассчитанными показателями по каждой подсистеме
+ * Calculates the Air Quality Index based on measurement data
+ * @param {Array} measurements - Air quality measurements
+ * @returns {Object} The calculated air quality index and description
  */
-export function calculateAllIndicators(factory) {
-    console.log('Начало расчета интегральных показателей для:', factory.factory_name);
+function calculateAirQualityIndex(measurements) {
+    // Filter out only air-related measurements
+    const airMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('повітря')
+    );
     
-    if (!factory || !factory.measurements) {
-        console.warn('Отсутствуют данные factory или measurements');
+    if (airMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key components for AQI calculation
+    const pollutants = {
+        'Двоокис азоту (NO2)': { weight: 0.2, limit: 0.2 },
+        'Двоокис сірки (SO2)': { weight: 0.2, limit: 0.5 },
+        'Оксид вуглецю': { weight: 0.2, limit: 5.0 },
+        'Формальдегід (H2CO)': { weight: 0.1, limit: 0.035 },
+        'Вміст пилу': { weight: 0.15, limit: 0.5 },
+        'Свинець': { weight: 0.1, limit: 0.001 },
+        'Бенз(а)пірен': { weight: 0.05, limit: 0.000001 }
+    };
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate weighted average of normalized pollutant values
+    airMeasurements.forEach(measurement => {
+        const pollutantInfo = pollutants[measurement.component_name];
+        if (pollutantInfo) {
+            // Calculate the ratio to the limit value
+            const ratio = parseFloat(measurement.value) / pollutantInfo.limit;
+            weightedSum += ratio * pollutantInfo.weight;
+            totalWeight += pollutantInfo.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing pollutants
+    const normalizedIndex = (weightedSum / totalWeight) * 100;
+    
+    // Determine the air quality category
+    let category, description, color;
+    
+    if (normalizedIndex <= 50) {
+        category = 'Добрий';
+        description = 'Якість повітря вважається задовільною, забруднення повітря становить невеликий ризик або не становить ризику.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex <= 100) {
+        category = 'Задовільний';
+        description = 'Якість повітря прийнятна, проте деякі забруднювачі можуть викликати помірне занепокоєння для дуже невеликої кількості людей.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex <= 150) {
+        category = 'Помірно забруднений';
+        description = 'Члени чутливих груп можуть відчувати вплив на здоров\'я. Широка громадськість, ймовірно, не постраждає.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex <= 200) {
+        category = 'Шкідливий';
+        description = 'Всі можуть почати відчувати наслідки для здоров\'я; члени чутливих груп можуть відчувати більш серйозні наслідки.';
+        color = '#FF0000'; // Red
+    } else if (normalizedIndex <= 300) {
+        category = 'Дуже шкідливий';
+        description = 'Попередження про небезпеку для здоров\'я. Більшість людей може зазнати серйозніших наслідків для здоров\'я.';
+        color = '#99004C'; // Purple
+    } else {
+        category = 'Небезпечний';
+        description = 'Тривога щодо здоров\'я: кожен може зазнати більш серйозних наслідків для здоров\'я.';
+        color = '#7E0023'; // Maroon
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates the Water Quality Index based on measurement data
+ * @param {Array} measurements - Water quality measurements
+ * @returns {Object} The calculated water quality index and description
+ */
+function calculateWaterQualityIndex(measurements) {
+    // Filter out only water-related measurements
+    const waterMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('водн')
+    );
+    
+    if (waterMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key components for WQI calculation
+    const parameters = {
+        'Показники епідемічної безпеки (мікробіологічні)': { weight: 0.3, limit: 1.0 },
+        'Санітарно-хімічні (органолептичні)': { weight: 0.2, limit: 1.0 },
+        'Санітарно-хімічні (фізико-хімічні)': { weight: 0.2, limit: 1.0 },
+        'Санітарно-хімічні (санітарно-токсикологічні)': { weight: 0.2, limit: 1.0 },
+        'Радіаційні показники': { weight: 0.1, limit: 1.0 }
+    };
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate weighted average of normalized parameter values
+    waterMeasurements.forEach(measurement => {
+        const paramInfo = parameters[measurement.component_name];
+        if (paramInfo) {
+            // Calculate the ratio to the limit value
+            const ratio = parseFloat(measurement.value) / paramInfo.limit;
+            weightedSum += ratio * paramInfo.weight;
+            totalWeight += paramInfo.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing parameters
+    const normalizedIndex = (weightedSum / totalWeight) * 100;
+    
+    // Determine the water quality category
+    let category, description, color;
+    
+    if (normalizedIndex <= 50) {
+        category = 'Відмінна';
+        description = 'Вода дуже чиста, придатна для всіх видів використання.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex <= 70) {
+        category = 'Добра';
+        description = 'Вода чиста, придатна для питного водопостачання після простої обробки.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex <= 90) {
+        category = 'Задовільна';
+        description = 'Вода помірно забруднена, потребує більш складної обробки для питного використання.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex <= 110) {
+        category = 'Погана';
+        description = 'Вода забруднена, використання обмежене.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Дуже погана';
+        description = 'Вода сильно забруднена, непридатна для більшості видів використання.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates the Soil Quality Index based on measurement data
+ * @param {Array} measurements - Soil quality measurements
+ * @returns {Object} The calculated soil quality index and description
+ */
+function calculateSoilQualityIndex(measurements) {
+    // Filter out only soil-related measurements
+    const soilMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('ґрунт')
+    );
+    
+    if (soilMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key components for SQI calculation
+    const parameters = {
+        'Гумус': { weight: 0.25, optimal: 3.5, range: 5 }, // optimal is the desired value, range is the normal variation
+        'Рухомі сполуки фосфору (P2O5)': { weight: 0.15, optimal: 150, range: 200 },
+        'Рухомі сполуки калію (K2O)': { weight: 0.15, optimal: 170, range: 200 },
+        'pH': { weight: 0.2, optimal: 6.5, range: 2 },
+        'Засоленість': { weight: 0.1, optimal: 0, range: 0.3 },
+        'Забруднення хімічними речовинами': { weight: 0.15, optimal: 0, range: 1 }
+    };
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate weighted average of normalized parameter values
+    soilMeasurements.forEach(measurement => {
+        const paramInfo = parameters[measurement.component_name];
+        if (paramInfo) {
+            // Calculate the deviation from optimal value
+            const value = parseFloat(measurement.value);
+            const deviation = Math.abs(value - paramInfo.optimal) / paramInfo.range;
+            const normalizedValue = Math.max(0, 1 - deviation); // 1 is best, 0 is worst
+            weightedSum += normalizedValue * paramInfo.weight;
+            totalWeight += paramInfo.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing parameters
+    const normalizedIndex = (weightedSum / totalWeight) * 100;
+    
+    // Determine the soil quality category
+    let category, description, color;
+    
+    if (normalizedIndex >= 85) {
+        category = 'Відмінна';
+        description = 'Ґрунт високої якості, родючий, без забруднень.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex >= 70) {
+        category = 'Добра';
+        description = 'Ґрунт доброї якості, підходить для більшості культур.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex >= 55) {
+        category = 'Задовільна';
+        description = 'Ґрунт середньої якості, може потребувати покращення для певних культур.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex >= 40) {
+        category = 'Погана';
+        description = 'Ґрунт низької якості, потребує значного покращення.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Дуже погана';
+        description = 'Ґрунт сильно деградований або забруднений, непридатний для сільського господарства без рекультивації.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates the Radiation Level Index based on measurement data
+ * @param {Array} measurements - Radiation level measurements
+ * @returns {Object} The calculated radiation level index and description
+ */
+function calculateRadiationLevelIndex(measurements) {
+    // Filter out only radiation-related measurements
+    const radiationMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('радіац')
+    );
+    
+    if (radiationMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the latest radiation measurement
+    const latestMeasurement = radiationMeasurements.sort((a, b) => 
+        new Date(b.measurement_date) - new Date(a.measurement_date)
+    )[0];
+    
+    const radiationValue = parseFloat(latestMeasurement.value);
+    
+    // Determine the radiation level category based on μSv/h (microsieverts per hour)
+    let category, description, color;
+    
+    if (radiationValue <= 0.3) {
+        category = 'Нормальний';
+        description = 'Природний фоновий рівень радіації, безпечний для здоров\'я.';
+        color = '#00E400'; // Green
+    } else if (radiationValue <= 0.5) {
+        category = 'Підвищений';
+        description = 'Дещо підвищений рівень радіації, але ще в межах безпечного діапазону.';
+        color = '#FFFF00'; // Yellow
+    } else if (radiationValue <= 1.0) {
+        category = 'Високий';
+        description = 'Високий рівень радіації, рекомендується обмежити перебування.';
+        color = '#FF7E00'; // Orange
+    } else if (radiationValue <= 5.0) {
+        category = 'Дуже високий';
+        description = 'Дуже високий рівень радіації, небезпечний для здоров\'я при тривалому перебуванні.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Небезпечний';
+        description = 'Небезпечний рівень радіації, потрібна евакуація.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: radiationValue.toFixed(2),
+        category,
+        description,
+        color,
+        unit: latestMeasurement.unit || 'μSv/h'
+    };
+}
+
+/**
+ * Calculates the Economic Status Index based on measurement data
+ * @param {Array} measurements - Economic status measurements
+ * @returns {Object} The calculated economic status index and description
+ */
+function calculateEconomicStatusIndex(measurements) {
+    // Filter out only economy-related measurements
+    const economyMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('економічн')
+    );
+    
+    if (economyMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key economic indicators
+    const indicators = {
+        'Валовий внутрішній продукт': { weight: 0.3, direction: 1 }, // 1 means higher is better
+        'Індекс промислової продукції': { weight: 0.2, direction: 1 },
+        'Заробітна плата': { weight: 0.2, direction: 1 },
+        'Індекс споживчих цін': { weight: 0.1, direction: -1 }, // -1 means lower is better
+        'Експорт товарів та послуг': { weight: 0.1, direction: 1 },
+        'Імпорт товарів та послуг': { weight: 0.1, direction: -1 }
+    };
+    
+    // Group measurements by component name and get the most recent values
+    const latestValues = {};
+    economyMeasurements.forEach(measurement => {
+        const component = measurement.component_name;
+        if (!latestValues[component] || new Date(measurement.measurement_date) > new Date(latestValues[component].measurement_date)) {
+            latestValues[component] = measurement;
+        }
+    });
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate the economic status index
+    Object.entries(latestValues).forEach(([component, measurement]) => {
+        const indicator = indicators[component];
+        if (indicator) {
+            // Normalize to a 0-100 scale, where 50 is neutral
+            let normalizedValue;
+            const value = parseFloat(measurement.value);
+            
+            // Different normalization based on the economic indicator
+            if (component === 'Індекс споживчих цін') {
+                // For inflation, 100% is neutral, lower is better
+                normalizedValue = 100 - (value - 100) * 2;
+            } else if (component === 'Індекс промислової продукції') {
+                // For industrial production index, 100% is neutral, higher is better
+                normalizedValue = 50 + (value - 100);
+            } else {
+                // For other indicators, normalize based on a reasonable range
+                normalizedValue = 50 + value / 2 * indicator.direction;
+            }
+            
+            // Clamp the value to 0-100
+            normalizedValue = Math.max(0, Math.min(100, normalizedValue));
+            
+            weightedSum += normalizedValue * indicator.weight;
+            totalWeight += indicator.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing indicators
+    const normalizedIndex = weightedSum / totalWeight;
+    
+    // Determine the economic status category
+    let category, description, color;
+    
+    if (normalizedIndex >= 80) {
+        category = 'Відмінний';
+        description = 'Економіка регіону знаходиться в дуже доброму стані, високий рівень зростання та зайнятості.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex >= 65) {
+        category = 'Добрий';
+        description = 'Економіка регіону в доброму стані, помірне зростання та стабільність.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex >= 50) {
+        category = 'Задовільний';
+        description = 'Економіка регіону в задовільному стані, невелике зростання або стагнація.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex >= 35) {
+        category = 'Поганий';
+        description = 'Економіка регіону в поганому стані, можливий спад та високе безробіття.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Кризовий';
+        description = 'Економіка регіону в кризовому стані, значний спад та високе безробіття.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates the Health Status Index based on measurement data
+ * @param {Array} measurements - Health status measurements
+ * @returns {Object} The calculated health status index and description
+ */
+function calculateHealthStatusIndex(measurements) {
+    // Filter out only health-related measurements
+    const healthMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('здоров')
+    );
+    
+    if (healthMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key health indicators
+    const indicators = {
+        'Медико-демографічні показники': { weight: 0.25, direction: 1 }, // 1 means higher is better
+        'Показники захворюваності та поширення хвороб (хворобливість)': { weight: 0.25, direction: -1 }, // -1 means lower is better
+        'Інвалідності та інвалідизації': { weight: 0.15, direction: -1 },
+        'Фізичного розвитку населення': { weight: 0.15, direction: 1 },
+        'Ризики захворювання': { weight: 0.1, direction: -1 },
+        'Прогноз тривалості життя': { weight: 0.1, direction: 1 }
+    };
+    
+    // Group measurements by component name and get the most recent values
+    const latestValues = {};
+    healthMeasurements.forEach(measurement => {
+        const component = measurement.component_name;
+        if (!latestValues[component] || new Date(measurement.measurement_date) > new Date(latestValues[component].measurement_date)) {
+            latestValues[component] = measurement;
+        }
+    });
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate the health status index
+    Object.entries(latestValues).forEach(([component, measurement]) => {
+        const indicator = indicators[component];
+        if (indicator) {
+            // Normalize to a 0-100 scale
+            let normalizedValue;
+            const value = parseFloat(measurement.value);
+            
+            // Different normalization based on the health indicator
+            if (component === 'Прогноз тривалості життя') {
+                // For life expectancy, normalize to a 0-100 scale
+                normalizedValue = ((value - 50) / 40) * 100; // assuming 50-90 years range
+            } else if (component === 'Показники захворюваності та поширення хвороб (хворобливість)') {
+                // For disease prevalence, lower is better
+                normalizedValue = 100 - value;
+            } else {
+                // For other indicators, normalize on a 0-100 scale
+                normalizedValue = value;
+            }
+            
+            // Adjust direction (higher is always better for the index)
+            normalizedValue = indicator.direction === -1 ? 100 - normalizedValue : normalizedValue;
+            
+            // Clamp the value to 0-100
+            normalizedValue = Math.max(0, Math.min(100, normalizedValue));
+            
+            weightedSum += normalizedValue * indicator.weight;
+            totalWeight += indicator.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing indicators
+    const normalizedIndex = weightedSum / totalWeight;
+    
+    // Determine the health status category
+    let category, description, color;
+    
+    if (normalizedIndex >= 80) {
+        category = 'Відмінний';
+        description = 'Здоров\'я населення регіону на дуже високому рівні, низька захворюваність.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex >= 65) {
+        category = 'Добрий';
+        description = 'Здоров\'я населення регіону на доброму рівні, показники вище середнього.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex >= 50) {
+        category = 'Задовільний';
+        description = 'Здоров\'я населення регіону на задовільному рівні, середні показники.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex >= 35) {
+        category = 'Поганий';
+        description = 'Здоров\'я населення регіону на низькому рівні, висока захворюваність.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Критичний';
+        description = 'Здоров\'я населення регіону в критичному стані, дуже висока захворюваність.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates the Energy Status Index based on measurement data
+ * @param {Array} measurements - Energy status measurements
+ * @returns {Object} The calculated energy status index and description
+ */
+function calculateEnergyStatusIndex(measurements) {
+    // Filter out only energy-related measurements
+    const energyMeasurements = measurements.filter(m => 
+        m.category_name && m.category_name.toLowerCase().includes('енергетичн')
+    );
+    
+    if (energyMeasurements.length === 0) {
+        return null;
+    }
+    
+    // Get the key energy indicators
+    const indicators = {
+        'Обсяги використання води': { weight: 0.15, direction: -1 }, // -1 means lower is better
+        'Обсяги використання електроенергії': { weight: 0.2, direction: -1 },
+        'Обсяги використання газу': { weight: 0.15, direction: -1 },
+        'Обсяги використання теплової енергії за кожен місяць': { weight: 0.15, direction: -1 },
+        'Середні обсяги споживання за місяць та рік': { weight: 0.15, direction: -1 },
+        'Енергоефективність будівлі або виробництва': { weight: 0.2, direction: 1 } // 1 means higher is better
+    };
+    
+    // Group measurements by component name and get the most recent values
+    const latestValues = {};
+    energyMeasurements.forEach(measurement => {
+        const component = measurement.component_name;
+        if (!latestValues[component] || new Date(measurement.measurement_date) > new Date(latestValues[component].measurement_date)) {
+            latestValues[component] = measurement;
+        }
+    });
+    
+    let totalWeight = 0;
+    let weightedSum = 0;
+    
+    // Calculate the energy status index
+    Object.entries(latestValues).forEach(([component, measurement]) => {
+        const indicator = indicators[component];
+        if (indicator) {
+            // Normalize to a 0-100 scale
+            let normalizedValue;
+            const value = parseFloat(measurement.value);
+            
+            // Different normalization based on the energy indicator
+            if (component === 'Енергоефективність будівлі або виробництва') {
+                // For energy efficiency, higher is better, normalize to 0-100
+                normalizedValue = value;
+            } else {
+                // For consumption indicators, lower is better, normalize inversely
+                // Assuming a reasonable range for consumption
+                const maxConsumption = 100; // This should be adjusted based on actual data
+                normalizedValue = 100 - (value / maxConsumption * 100);
+            }
+            
+            // Adjust direction (higher is always better for the index)
+            normalizedValue = indicator.direction === -1 ? 100 - normalizedValue : normalizedValue;
+            
+            // Clamp the value to 0-100
+            normalizedValue = Math.max(0, Math.min(100, normalizedValue));
+            
+            weightedSum += normalizedValue * indicator.weight;
+            totalWeight += indicator.weight;
+        }
+    });
+    
+    // If we don't have enough data, return null
+    if (totalWeight === 0) {
+        return null;
+    }
+    
+    // Normalize to account for missing indicators
+    const normalizedIndex = weightedSum / totalWeight;
+    
+    // Determine the energy status category
+    let category, description, color;
+    
+    if (normalizedIndex >= 80) {
+        category = 'Відмінний';
+        description = 'Дуже висока енергоефективність, низьке споживання ресурсів.';
+        color = '#00E400'; // Green
+    } else if (normalizedIndex >= 65) {
+        category = 'Добрий';
+        description = 'Добра енергоефективність, раціональне використання ресурсів.';
+        color = '#FFFF00'; // Yellow
+    } else if (normalizedIndex >= 50) {
+        category = 'Задовільний';
+        description = 'Середня енергоефективність, помірне використання ресурсів.';
+        color = '#FF7E00'; // Orange
+    } else if (normalizedIndex >= 35) {
+        category = 'Поганий';
+        description = 'Низька енергоефективність, високе споживання ресурсів.';
+        color = '#FF0000'; // Red
+    } else {
+        category = 'Критичний';
+        description = 'Дуже низька енергоефективність, надмірне споживання ресурсів.';
+        color = '#99004C'; // Purple
+    }
+    
+    return {
+        index: normalizedIndex.toFixed(1),
+        category,
+        description,
+        color
+    };
+}
+
+/**
+ * Calculates all available indicators for a factory
+ * @param {Object} factory - Factory data with measurements
+ * @returns {Object} Object containing all calculated indicators
+ */
+function calculateAllIndicators(factory) {
+    if (!factory.measurements || factory.measurements.length === 0) {
         return {};
     }
     
-    console.log(`Найдено ${factory.measurements.length} измерений`);
-    
     const indicators = {};
-
-    try {
-        // Расчет показателя загрязнения воздуха
-        indicators.airQuality = calculateAirQualityIndex(factory.measurements);
-        console.log('Показатель качества воздуха рассчитан:', indicators.airQuality);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя качества воздуха:', error);
-        indicators.airQuality = createDummyIndicator('Якість повітря', 'Помилка розрахунку');
+    
+    // Calculate Air Quality Index
+    const airQuality = calculateAirQualityIndex(factory.measurements);
+    if (airQuality) {
+        indicators.airQuality = airQuality;
     }
     
-    try {
-        // Расчет показателя качества воды
-        indicators.waterQuality = calculateWaterQualityIndex(factory.measurements);
-        console.log('Показатель качества воды рассчитан:', indicators.waterQuality);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя качества воды:', error);
-        indicators.waterQuality = createDummyIndicator('Якість води', 'Помилка розрахунку');
+    // Calculate Water Quality Index
+    const waterQuality = calculateWaterQualityIndex(factory.measurements);
+    if (waterQuality) {
+        indicators.waterQuality = waterQuality;
     }
     
-    try {
-        // Расчет показателя загрязнения почв
-        indicators.soilQuality = calculateSoilQualityIndex(factory.measurements);
-        console.log('Показатель качества почв рассчитан:', indicators.soilQuality);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя качества почв:', error);
-        indicators.soilQuality = createDummyIndicator('Стан ґрунтів', 'Помилка розрахунку');
+    // Calculate Soil Quality Index
+    const soilQuality = calculateSoilQualityIndex(factory.measurements);
+    if (soilQuality) {
+        indicators.soilQuality = soilQuality;
     }
     
-    try {
-        // Расчет показателя радиационного состояния
-        indicators.radiationLevel = calculateRadiationLevelIndex(factory.measurements);
-        console.log('Показатель радиационного состояния рассчитан:', indicators.radiationLevel);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя радиационного состояния:', error);
-        indicators.radiationLevel = createDummyIndicator('Рівень радіації', 'Помилка розрахунку');
+    // Calculate Radiation Level Index
+    const radiationLevel = calculateRadiationLevelIndex(factory.measurements);
+    if (radiationLevel) {
+        indicators.radiationLevel = radiationLevel;
     }
     
-    try {
-        // Расчет показателя экономического состояния
-        indicators.economyStatus = calculateEconomyStatusIndex(factory.measurements);
-        console.log('Показатель экономического состояния рассчитан:', indicators.economyStatus);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя экономического состояния:', error);
-        indicators.economyStatus = createDummyIndicator('Економічний стан', 'Помилка розрахунку');
+    // Calculate Economic Status Index
+    const economicStatus = calculateEconomicStatusIndex(factory.measurements);
+    if (economicStatus) {
+        indicators.economicStatus = economicStatus;
     }
     
-    try {
-        // Расчет показателя состояния здоровья населения
-        indicators.healthStatus = calculateHealthStatusIndex(factory.measurements);
-        console.log('Показатель состояния здоровья населения рассчитан:', indicators.healthStatus);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя состояния здоровья населения:', error);
-        indicators.healthStatus = createDummyIndicator('Стан здоров\'я', 'Помилка розрахунку');
+    // Calculate Health Status Index
+    const healthStatus = calculateHealthStatusIndex(factory.measurements);
+    if (healthStatus) {
+        indicators.healthStatus = healthStatus;
     }
     
-    try {
-        // Расчет показателя энергетического состояния
-        indicators.energyStatus = calculateEnergyStatusIndex(factory.measurements);
-        console.log('Показатель энергетического состояния рассчитан:', indicators.energyStatus);
-    } catch (error) {
-        console.error('Ошибка при расчете показателя энергетического состояния:', error);
-        indicators.energyStatus = createDummyIndicator('Енергетичний стан', 'Помилка розрахунку');
+    // Calculate Energy Status Index
+    const energyStatus = calculateEnergyStatusIndex(factory.measurements);
+    if (energyStatus) {
+        indicators.energyStatus = energyStatus;
     }
     
     return indicators;
 }
 
 /**
- * Создает заглушку для индикатора
- * @param {string} name - Название индикатора
- * @param {string} noDataMessage - Сообщение при отсутствии данных
- * @returns {Object} - Заглушка индикатора
+ * Creates HTML element to display indicators
+ * @param {Object} indicators - Object with calculated indicators
+ * @returns {HTMLElement} Element showing the indicators
  */
-function createDummyIndicator(name, noDataMessage) {
-    return {
-        value: null,
-        class: null,
-        text: noDataMessage,
-        color: '#999999'
-    };
-}
-
-/**
- * Создает HTML-элемент для отображения всех интегральных показателей
- * @param {Object} indicators - Объект с рассчитанными показателями
- * @returns {HTMLElement} - HTML-элемент с индикаторами
- */
-export function createIndicatorsDisplay(indicators) {
-    console.log('Создание отображения индикаторов:', indicators);
-    
+function createIndicatorsDisplay(indicators) {
     const container = document.createElement('div');
     container.className = 'indicators-container';
-    container.style.marginTop = '15px';
-    container.style.marginBottom = '15px';
     
-    // Проверка наличия показателей
-    if (!indicators || Object.keys(indicators).length === 0) {
-        console.warn('Отсутствуют данные для отображения индикаторов');
-        const noDataMessage = document.createElement('p');
-        noDataMessage.textContent = 'Немає даних для відображення';
-        noDataMessage.style.fontStyle = 'italic';
-        noDataMessage.style.color = '#666';
-        container.appendChild(noDataMessage);
-        return container;
-    }
-    
-    // Добавляем заголовок
+    // Add a title
     const title = document.createElement('h4');
-    title.textContent = 'Інтегральні показники:';
-    title.style.marginBottom = '10px';
+    title.textContent = 'Інтегральні показники якості';
     container.appendChild(title);
     
-    // Определяем порядок отображения показателей
-    const indicatorOrder = [
-        'airQuality', 
-        'waterQuality', 
-        'soilQuality', 
-        'radiationLevel', 
-        'economyStatus', 
-        'healthStatus', 
-        'energyStatus'
-    ];
-    
-    // Считаем, сколько показателей было добавлено
-    let addedIndicators = 0;
-    
-    // Перебираем показатели в нужном порядке
-    for (const key of indicatorOrder) {
-        const indicator = indicators[key];
+    // Function to create an indicator item
+    function createIndicatorItem(name, indicator) {
+        const item = document.createElement('div');
+        item.className = 'indicator-item';
         
-        // Пропускаем отсутствующие показатели
-        if (!indicator) {
-            continue;
-        }
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'indicator-name';
+        nameSpan.textContent = name + ':';
         
-        const indicatorContainer = document.createElement('div');
-        indicatorContainer.className = 'indicator-item';
-        indicatorContainer.style.marginBottom = '8px';
-        indicatorContainer.style.display = 'flex';
-        indicatorContainer.style.alignItems = 'center';
+        const valueSpan = document.createElement('span');
+        valueSpan.className = 'indicator-value';
+        valueSpan.style.backgroundColor = indicator.color;
+        valueSpan.textContent = indicator.category;
         
-        // Название показателя
-        const indicatorName = document.createElement('span');
-        indicatorName.className = 'indicator-name';
-        indicatorName.style.marginRight = '10px';
-        indicatorName.style.minWidth = '150px';
+        const textSpan = document.createElement('span');
+        textSpan.className = 'indicator-text';
+        textSpan.textContent = ` (${indicator.index}${indicator.unit ? ' ' + indicator.unit : ''})`;
         
-        switch(key) {
-            case 'airQuality':
-                indicatorName.textContent = 'Якість повітря:';
-                break;
-            case 'waterQuality':
-                indicatorName.textContent = 'Якість води:';
-                break;
-            case 'soilQuality':
-                indicatorName.textContent = 'Стан ґрунтів:';
-                break;
-            case 'radiationLevel':
-                indicatorName.textContent = 'Рівень радіації:';
-                break;
-            case 'economyStatus':
-                indicatorName.textContent = 'Економічний стан:';
-                break;
-            case 'healthStatus':
-                indicatorName.textContent = 'Стан здоров\'я:';
-                break;
-            case 'energyStatus':
-                indicatorName.textContent = 'Енергетичний стан:';
-                break;
-            default:
-                indicatorName.textContent = key + ':';
-        }
+        item.appendChild(nameSpan);
+        item.appendChild(valueSpan);
+        item.appendChild(textSpan);
         
-        indicatorContainer.appendChild(indicatorName);
-        
-        // Значение показателя (если есть)
-        if (indicator.value !== null && indicator.value !== undefined) {
-            const indicatorValue = document.createElement('span');
-            indicatorValue.className = 'indicator-value';
-            indicatorValue.style.display = 'inline-block';
-            indicatorValue.style.padding = '4px 8px';
-            indicatorValue.style.borderRadius = '4px';
-            indicatorValue.style.backgroundColor = indicator.color || '#999999';
-            indicatorValue.style.color = ['#FF5252', '#FFA726'].includes(indicator.color) ? '#fff' : '#000';
-            indicatorValue.style.fontWeight = 'bold';
-            indicatorValue.style.marginRight = '8px';
-            
-            // Форматирование для различных показателей
-            if (key === 'waterQuality') {
-                // Это процент качества (100% = хорошо, 0% = плохо)
-                indicatorValue.textContent = indicator.value + '%';
-                
-                // Добавляем дополнительную информацию при наведении
-                if (indicator.rawRatio) {
-                    indicatorValue.title = `Відношення до ГДК: ${indicator.rawRatio}`;
-                }
-            } else {
-                indicatorValue.textContent = indicator.value;
-            }
-            
-            indicatorContainer.appendChild(indicatorValue);
-        }
-        
-        // Текстовое описание
-        const indicatorText = document.createElement('span');
-        indicatorText.className = 'indicator-text';
-        indicatorText.textContent = indicator.text || 'Немає опису';
-        
-        // Добавляем дополнительную информацию для различных показателей
-        if (key === 'waterQuality' && indicator.value !== null) {
-            // Дополнительная информация о качестве воды
-            if (indicator.value === 0) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(критичний рівень!)</span>`;
-            } else if (indicator.value < 20) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;">(низька якість)</span>`;
-            } else if (indicator.value > 95) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#26A69A;font-weight:bold;">(дуже чиста)</span>`;
-            }
-            
-            // Если есть информация о наихудшем загрязнителе
-            if (indicator.worstContaminant && indicator.value < 80) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                detailSpan.textContent = `Найвищий показник: ${indicator.worstContaminant}`;
-                indicatorText.appendChild(detailSpan);
-            }
-        } else if (key === 'soilQuality' && indicator.value !== null) {
-            // Дополнительная информация о состоянии почв
-            if (indicator.class >= 4) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(потребує покращення)</span>`;
-            } else if (indicator.class === 3) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FFEB3B;font-style:italic;">(прийнятна якість)</span>`;
-            }
-            
-            // Если есть информация о показателях
-            if (indicator.indicators && indicator.indicators.length > 0) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                
-                // Группируем показатели по качеству
-                const goodIndicators = indicator.indicators.filter(i => i.normalizedValue >= 0.7);
-                const mediumIndicators = indicator.indicators.filter(i => i.normalizedValue >= 0.4 && i.normalizedValue < 0.7);
-                const badIndicators = indicator.indicators.filter(i => i.normalizedValue < 0.4);
-                
-                if (badIndicators.length > 0) {
-                    const badNames = badIndicators.map(i => i.displayName.split(' ')[0]).join(', ');
-                    detailSpan.textContent = `Проблемні показники: ${badNames}`;
-                } else if (indicator.indicators.length >= 3) {
-                    detailSpan.textContent = `Оцінено ${indicator.indicators.length} показників ґрунту`;
-                }
-                
-                indicatorText.appendChild(detailSpan);
-            }
-        } else if (key === 'airQuality' && indicator.value !== null) {
-            // Дополнительная информация о качестве воздуха
-            const airValue = parseFloat(indicator.value);
-            if (airValue >= 1.5) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(значне перевищення норми)</span>`;
-            } else if (airValue >= 1.0) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FFA726;font-style:italic;">(перевищення норми)</span>`;
-            } 
-        }  else if (key === 'radiationLevel' && indicator.value !== null) {
-            // Дополнительная информация о радиационном состоянии
-            const radiationValue = parseFloat(indicator.value);
-            
-            if (indicator.class >= 3) {
-                // Для повышенного и опасного уровня
-                indicatorText.innerHTML = `${indicator.text} <span style="color:${indicator.color};font-weight:bold;">(потребує контролю)</span>`;
-                
-                if (indicator.risk && indicator.risk.category !== 'NEGLIGIBLE' && indicator.risk.category !== 'SMALL') {
-                    const detailSpan = document.createElement('div');
-                    detailSpan.style.fontSize = '0.9em';
-                    detailSpan.style.marginTop = '3px';
-                    detailSpan.style.color = '#666';
-                    detailSpan.textContent = `Категорія ризику: ${indicator.risk.description}`;
-                    indicatorText.appendChild(detailSpan);
-                }
-            } else {
-                // Для нормального уровня
-                if (radiationValue <= 0.2) {
-                    indicatorText.innerHTML = `${indicator.text} <span style="color:#26A69A;font-style:italic;">(природний фон)</span>`;
-                }
-            }
-             // Если есть информация о компоненте
-             if (indicator.component) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                detailSpan.textContent = `Вимірювання: ${indicator.component}`;
-                indicatorText.appendChild(detailSpan);
-            }
-        } else if (key === 'economyStatus' && indicator.value !== null) {
-            // Дополнительная информация об экономическом состоянии
-            if (indicator.class >= 4) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(потребує покращення)</span>`;
-            } else if (indicator.class <= 2) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#66BB6A;font-style:italic;">(позитивна динаміка)</span>`;
-            }
-            
-            // Добавляем детали по лучшим и худшим индикаторам
-            if (indicator.indicators && indicator.indicators.length > 0) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                
-                const details = [];
-                
-                // Если есть проблемный индикатор
-                if (indicator.worstIndicator && indicator.worstIndicator.score < 0.3) {
-                    details.push(`Проблемний: ${indicator.worstIndicator.shortName} (${indicator.worstIndicator.value} ${indicator.worstIndicator.unit})`);
-                }
-                
-                // Если есть сильный индикатор
-                if (indicator.bestIndicator && indicator.bestIndicator.score > 0.7) {
-                    details.push(`Сильний: ${indicator.bestIndicator.shortName} (${indicator.bestIndicator.value} ${indicator.bestIndicator.unit})`);
-                }
-                
-                if (details.length > 0) {
-                    detailSpan.textContent = details.join(', ');
-                    indicatorText.appendChild(detailSpan);
-                } else {
-                    // Если нет выделенных индикаторов, показываем общее количество
-                    detailSpan.textContent = `Оцінено ${indicator.indicators.length} економічних показників`;
-                    indicatorText.appendChild(detailSpan);
-                }
-            }
-        } else if (key === 'healthStatus' && indicator.value !== null) {
-            // Дополнительная информация о состоянии здоровья населения
-            if (indicator.class >= 4) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(потребує уваги)</span>`;
-            } else if (indicator.class <= 2) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#66BB6A;font-style:italic;">(позитивні показники)</span>`;
-            }
-            
-            // Добавляем детали по категориям
-            if (indicator.categories) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                
-                const categoryCount = Object.keys(indicator.categories).length;
-                
-                // Если есть проблемная категория
-                if (indicator.worstCategory && indicator.worstCategory.score < 0.3) {
-                    const worstCategoryName = HEALTH_INDICATORS && 
-                                             HEALTH_INDICATORS[indicator.worstCategory.category] ? 
-                                             HEALTH_INDICATORS[indicator.worstCategory.category].shortName :
-                                             indicator.worstCategory.category;
-                    
-                    detailSpan.textContent = `Проблемна категорія: ${worstCategoryName}`;
-                } else if (categoryCount > 0) {
-                    // Показываем количество оцененных категорий
-                    detailSpan.textContent = `Оцінено ${categoryCount} ${categoryCount === 1 ? 'категорію' : 'категорії'} показників здоров'я`;
-                }
-                
-                indicatorText.appendChild(detailSpan);
-            }
-        } else if (key === 'energyStatus' && indicator.value !== null) {
-            // Дополнительная информация об энергетическом состоянии
-            if (indicator.class >= 4) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#FF5252;font-weight:bold;">(енергонеефективно)</span>`;
-            } else if (indicator.class <= 2) {
-                indicatorText.innerHTML = `${indicator.text} <span style="color:#66BB6A;font-style:italic;">(енергоефективно)</span>`;
-            }
-            
-            // Добавляем детали по ресурсам
-            if (indicator.indicators && indicator.indicators.length > 0) {
-                const detailSpan = document.createElement('div');
-                detailSpan.style.fontSize = '0.9em';
-                detailSpan.style.marginTop = '3px';
-                detailSpan.style.color = '#666';
-                
-                const resourceTypes = new Set(indicator.indicators.map(i => i.resourceType));
-                
-                // Если есть наименее эффективный ресурс
-                if (indicator.leastEfficientResource && indicator.leastEfficientResource.efficiency < 0.4) {
-                    const resourceName = {
-                        'water': 'водоспоживання',
-                        'electricity': 'електроспоживання',
-                        'gas': 'газоспоживання',
-                        'heat': 'теплоспоживання'
-                    }[indicator.leastEfficientResource.resourceType] || 'енергоспоживання';
-                    
-                    detailSpan.textContent = `Найменш ефективне: ${resourceName}`;
-                } else if (resourceTypes.size > 0) {
-                    // Показываем количество оцененных ресурсов
-                    detailSpan.textContent = `Оцінено ${resourceTypes.size} ${resourceTypes.size === 1 ? 'вид' : 'види'} енергоресурсів`;
-                }
-                
-                indicatorText.appendChild(detailSpan);
-            }
-        }
-        
-        indicatorContainer.appendChild(indicatorText);
-        container.appendChild(indicatorContainer);
-        
-        addedIndicators++; // Увеличиваем счетчик добавленных индикаторов
+        return item;
     }
     
-    // Если не было добавлено ни одного индикатора, показываем сообщение
-    if (addedIndicators === 0) {
-        const noDataMessage = document.createElement('p');
-        noDataMessage.textContent = 'Немає даних для відображення';
-        noDataMessage.style.fontStyle = 'italic';
-        noDataMessage.style.color = '#666';
-        container.appendChild(noDataMessage);
+    // Add indicators if they exist
+    if (indicators.airQuality) {
+        container.appendChild(createIndicatorItem('Якість повітря', indicators.airQuality));
+    }
+    
+    if (indicators.waterQuality) {
+        container.appendChild(createIndicatorItem('Якість води', indicators.waterQuality));
+    }
+    
+    if (indicators.soilQuality) {
+        container.appendChild(createIndicatorItem('Якість ґрунту', indicators.soilQuality));
+    }
+    
+    if (indicators.radiationLevel) {
+        container.appendChild(createIndicatorItem('Рівень радіації', indicators.radiationLevel));
+    }
+    
+    if (indicators.economicStatus) {
+        container.appendChild(createIndicatorItem('Економічний стан', indicators.economicStatus));
+    }
+    
+    if (indicators.healthStatus) {
+        container.appendChild(createIndicatorItem('Стан здоров\'я населення', indicators.healthStatus));
+    }
+    
+    if (indicators.energyStatus) {
+        container.appendChild(createIndicatorItem('Енергетичний стан', indicators.energyStatus));
+    }
+    
+    // If no indicators were added, show a message
+    if (container.children.length === 1) {
+        const noData = document.createElement('p');
+        noData.textContent = 'Немає даних для розрахунку показників';
+        noData.style.fontStyle = 'italic';
+        noData.style.color = '#666';
+        container.appendChild(noData);
     }
     
     return container;
 }
+
+// Export functions for use in other modules
+export {
+    calculateAirQualityIndex,
+    calculateWaterQualityIndex,
+    calculateSoilQualityIndex,
+    calculateRadiationLevelIndex,
+    calculateEconomicStatusIndex,
+    calculateHealthStatusIndex,
+    calculateEnergyStatusIndex,
+    calculateAllIndicators,
+    createIndicatorsDisplay
+};

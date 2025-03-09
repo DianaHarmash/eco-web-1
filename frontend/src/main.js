@@ -20,6 +20,9 @@ import {
     createIndicatorsDisplay
 } from './integralIndicators.js';
 
+// Import the measures management functionality
+import { initializeMeasuresManagement } from './integrationInitializer.js';
+
 let map;
 let markers = [];
 let factoriesData = [];
@@ -52,6 +55,11 @@ async function initMap() {
         
         // Initial update
         updateMarkersAndTable();
+        
+        // Initialize measures management functionality
+        if (typeof initializeMeasuresManagement === 'function') {
+            initializeMeasuresManagement();
+        }
     } catch (error) {
         console.error('Error fetching data:', error);
     }
@@ -185,11 +193,16 @@ function createInfoWindowContent(factory) {
     const detailsButton = document.createElement('button');
     detailsButton.textContent = 'Переглянути детальні дані';
     detailsButton.className = 'details-button';
+    detailsButton.id = 'factoryDetails';
     
     detailsButton.addEventListener('click', function() {
         console.log('Button clicked for factory:', factory.factory_name);
         try {
             showPieChartModal(factory);
+            
+            // Trigger an event so other modules can react
+            const event = new CustomEvent('showFactoryDetails', { detail: factory });
+            window.dispatchEvent(event);
         } catch (error) {
             console.error('Error opening modal:', error);
             alert('Помилка при відкритті деталей. Будь ласка, спробуйте пізніше.');
@@ -255,6 +268,9 @@ function createCategoryDropdown(factory, selectedCategory, onChange) {
 
 function showPieChartModal(factory) {
     console.log('Showing modal for factory:', factory);
+    
+    // This function needs to be globally accessible for the measures management
+    window.showPieChartModal = showPieChartModal;
     
     // Создать или получить модальное окно
     let modal = document.getElementById('pieChartModal');
@@ -414,6 +430,10 @@ function showPieChartModal(factory) {
     
     // Первоначальное отображение
     createCategoryCharts(factory, initialCategory, categoryKeywords[initialCategory]);
+    
+    // Trigger an event for other modules to add content
+    const event = new CustomEvent('factoryModalOpened', { detail: { factory, modal } });
+    window.dispatchEvent(event);
     
     // Показать модальное окно
     modal.style.display = 'block';
@@ -730,6 +750,14 @@ function createComponentChart(componentMeasurements, chartContainer) {
     
     chartContainer.appendChild(svg);
 }
+
+// Export functions for use in other modules
+export {
+    initMap,
+    showPieChartModal,
+    createInfoWindowContent,
+    updateMarkersAndTable
+};
 
 (async function loadGoogleMaps() {
     const script = document.createElement("script");
